@@ -11,7 +11,6 @@
 #define UID_SIZE 6
 #define PASSWORD_SIZE 8
 #define PEERPORT 65535
-#define PEERPORTSIZE 5
 
 typedef struct {
     int logged_in;
@@ -100,7 +99,10 @@ int ds_communication(int fd, char *message, char *response, struct addrinfo *res
 void ds_reply(char *response, User *user) {
     char command[MAXSIZE];
     char status [MAXSIZE];
-    sscanf(response, "%s %s\n", command, status);
+    if(sscanf(response, "%s %s\n", command, status) != 2) {
+        printf("Invalid DS response\n");
+        return;
+    }
     if (strcmp(command, "RLI") == 0) {
         
         if(strcmp(status, "OK") == 0) {  
@@ -113,7 +115,9 @@ void ds_reply(char *response, User *user) {
             
         } else if (strcmp(status, "NOK") == 0) {
             printf("Incorrect login attempt\n");
+            clear_user(user);
         } else if (strcmp(status, "ERR") == 0) {
+            clear_user(user);
             printf("Incorrect login attempt\n");
         }
     } else if (strcmp(command, "RLO") == 0) {
@@ -201,7 +205,7 @@ int main(int argc, char *argv[]) {
         }
     }
     if (argc == 3 || argc == 7 || argc == 5) {
-        if (valid_peerport(peerport)) user.peerport = peerport;
+        user.peerport = peerport;
 
         fd = socket(AF_INET, SOCK_DGRAM, 0);
         if (fd == -1) exit(1);
