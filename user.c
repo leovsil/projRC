@@ -66,11 +66,9 @@ int valid_filename(char *filename) {
         }
         i++;
     }
-
     if (filename[i] != '.' || i == 0) { // garante que tem ponto e existe um caracter antes o ponto
         return 0;
     }
-
     i++;  // passar o .
     for (int j = 0; j < 3; j++) {
         if (filename[i + j] == '\0' || !isalnum(filename[i + j])) {
@@ -86,10 +84,8 @@ int valid_filename(char *filename) {
 int valid_publish(char *filename, int Fsize, char *label) {
      if (Fsize < FSIZE_MIN || Fsize > FSIZE_MAX)
         return 0;
-
     if (strlen(label) < LABEL_MIN || strlen(label) > LABELSIZE)
         return 0;
-
     for (int i = 0; label[i] != '\0'; i++) {
         if (!isalnum(label[i]) && label[i] != '-' && label[i] != '_')
             return 0;
@@ -189,7 +185,7 @@ void print_list(char *response) {
     
 }
 
-int ds_tcp_communication(char *message, char *response, struct addrinfo *res_tcp) {
+int ds_tcp_communication( char *message, char *response, struct addrinfo *res_tcp) {
     int fd_tcp;
     ssize_t n;
     
@@ -351,7 +347,7 @@ int main(int argc, char *argv[]) {
     struct addrinfo *res;
     struct addrinfo hints_tcp;
     struct addrinfo *res_tcp;
-    int fd, errcode, Fsize = 0;
+    int fd, fd_tcp, errcode, Fsize = 0;
     
     if(argc != 3 && argc != 5 && argc != 7) {
         printf("Usage: %s -m peerport [-n DSIP] [-p DSport]\n", argv[0]);
@@ -428,8 +424,8 @@ int main(int argc, char *argv[]) {
                     
                     strcpy(user.uid, uid_aux);
                     strcpy(user.password, password_aux);
-                    convert_ds(command, &user, ds_command, filename, Fsize, label);                // converte dados do user numa mensagem para DS
-                    if (ds_communication(fd, ds_command, response, res)) {     // envia a mensagem para o DS e recebe resposta
+                    convert_ds(command, &user, ds_command, filename, Fsize, label);     // converte dados do user numa mensagem para DS
+                    if (ds_communication(fd, ds_command, response, res)) {              // envia a mensagem para o DS e recebe resposta
                         ds_reply(response, &user);
                     }
                 } else {
@@ -531,15 +527,14 @@ int main(int argc, char *argv[]) {
                     continue;
                 }
                 convert_ds(command, &user, ds_command, filename, Fsize, label);                     // comunicação com o DS 
-                if (ds_tcp_communication(fd, ds_command, response)) {
+                if (ds_tcp_communication(ds_command, response, res_tcp)) {
                     ds_reply(response, &user);
                 } 
             
             
             } else {
                 printf("Unknown command\n");
-            }  
-        
+            } 
         }
     }
     freeaddrinfo(res);
