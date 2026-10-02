@@ -265,9 +265,6 @@ void ds_reply(char *response, User *user) {
 
         } else if (strcmp(status, "WRP") == 0) {
             printf("Incorrect password\n");
-            
-        } else if (strcmp(status, "ERR") == 0) {
-            printf("Incorrect logout attempt\n");
         }
     } else if (strcmp(command, "RUR") == 0) {               // UNREGISTER
         if(strcmp(status, "OK") == 0) {
@@ -282,9 +279,6 @@ void ds_reply(char *response, User *user) {
 
         } else if (strcmp(status, "WRP") == 0) {
             printf("Incorrect password\n");         // nao sei se e suposto dizer isto 
-
-        } else if (strcmp(status, "ERR") == 0) {
-            printf("Incorrect unregister attempt\n");
         } 
     }  else if (strcmp(command, "RPB") == 0) {
         if(strcmp(status, "OK") == 0) {
@@ -299,7 +293,7 @@ void ds_reply(char *response, User *user) {
         } else if (strcmp(status, "WRP") == 0) {
             printf("Incorrect password\n");
 
-        } else if (strcmp(status, "NOK") == 0 || strcmp(status, "ERR") == 0) {
+        } else if (strcmp(status, "NOK") == 0) {
             printf("Incorrect publish attempt\n");
         }
     } else if (strcmp(command, "RRM") == 0) {
@@ -318,16 +312,19 @@ void ds_reply(char *response, User *user) {
 
         } else if (strcmp(status, "NOK") == 0) {
             printf("File not published\n");
-
-        } else if (strcmp(status, "ERR") == 0) {
-            printf("Incorrect removal attempt\n");
-        } 
+        }
     } else if (strcmp(command, "RLS") == 0) {
         if(strcmp(status, "OK") == 0) {
             print_list(response);
             
         } else if (strcmp(status, "NOK") == 0) {
             printf("No published resources\n"); //nao esta enunciado
+        }
+    } else if (strcmp(command, "RVR") == 0) {
+        if(strcmp(status, "OK") == 0) {
+            print_versions(response);
+        } else if (strcmp(status, "NOK") == 0) {
+            printf("No versions available\n");
         }
     } else {
         printf("Unknown command from DS: %s\n", command);
@@ -357,7 +354,7 @@ int main(int argc, char *argv[]) {
     struct addrinfo *res;
     struct addrinfo hints_tcp;
     struct addrinfo *res_tcp;
-    int fd, fd_tcp, errcode, Fsize = 0;
+    int fd, errcode, Fsize = 0;
     
     if(argc != 3 && argc != 5 && argc != 7) {
         printf("Usage: %s -m peerport [-n DSIP] [-p DSport]\n", argv[0]);
@@ -548,6 +545,7 @@ int main(int argc, char *argv[]) {
         }
     }
     freeaddrinfo(res);
+    freeaddrinfo(res_tcp);
     close(fd);
     return 0;
     
