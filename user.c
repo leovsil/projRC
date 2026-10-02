@@ -186,7 +186,39 @@ void print_list(char *response) {
 }
 
 void print_versions(char *response){
-    
+    char copy[MAXSIZE];
+    strcpy(copy, response);
+
+    char *token = strtok(copy, " \n");  // RVS
+    token = strtok(NULL, " \n");        // OK e o NULL é para comecar na msm string onde estava
+
+    char *uid;
+    char *fsize;
+    char *label;
+    char *publication_time;
+    char *availability;
+
+    int i = 1;
+    while((uid = strtok(NULL, " \n")) != NULL) {
+        fsize = strtok(NULL, " \n");
+        label = strtok(NULL, " \n");
+        publication_time = strtok(NULL, " \n");
+        availability = strtok(NULL, " \n");
+
+        if (fsize == NULL || label == NULL || publication_time == NULL || availability == NULL) {
+            printf("Invalid DS response\n");
+            return;
+        }
+
+        printf("Version %d:\n", i);
+        printf("UID: %s\n", uid);
+        printf("Size: %s bytes\n", fsize);
+        printf("Label: %s\n", label);
+        printf("Publication time: %s\n", publication_time);
+        printf("Availability: %s\n", availability);
+
+        i++;
+    }
 }
 
 int ds_tcp_communication( char *message, char *response, struct addrinfo *res_tcp) {
