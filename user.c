@@ -185,6 +185,10 @@ void print_list(char *response) {
     
 }
 
+void print_versions(char *response){
+    
+}
+
 int ds_tcp_communication( char *message, char *response, struct addrinfo *res_tcp) {
     int fd_tcp;
     ssize_t n;
@@ -223,7 +227,13 @@ int ds_tcp_communication( char *message, char *response, struct addrinfo *res_tc
 void ds_reply(char *response, User *user) {
     char command[MAXSIZE];
     char status [MAXSIZE];
-    if(sscanf(response, "%s %s\n", command, status) != 2) {
+    int n = sscanf(response, "%s %s\n", command, status);
+
+    if (n ==1 && strcmp(command, "ERR") == 0) {
+        printf("error\n");  //nao sei qual o output, nao encontro no enunciado
+        return;
+    }
+    if(n != 2) {
         printf("Invalid DS response\n");
         return;
     }
