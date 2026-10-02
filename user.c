@@ -280,7 +280,7 @@ void ds_reply(char *response, User *user) {
             printf("New user registered\n");
             user->logged_in = 1;
             
-        } else if (strcmp(status, "NOK") == 0 || strcmp(status, "ERR") == 0) {
+        } else if (strcmp(status, "NOK") == 0) {
             printf("Incorrect login attempt\n");
             clear_user(user);
         }
