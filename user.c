@@ -130,7 +130,6 @@ int open_file(char *filename) {
     return bytes;
 }
 
-
 void convert_ds(char *command, User *user, char * ds_command, char *filename, int Fsize, char *label) {
     
     if(strcmp(command, "login") == 0) {
@@ -168,6 +167,7 @@ int ds_communication(int fd, char *message, char *response, struct addrinfo *res
     return 1;
 
 }
+
 void print_list(char *response) {
     char copy[MAXSIZE];
     strcpy(copy, response); //copy = "RLS OK foto.jpg trabalho.pdf teste.txt\n"
@@ -214,7 +214,9 @@ void print_versions(char *response){
         printf("UID: %s\n", uid);
         printf("Size: %s bytes\n", fsize);
         printf("Label: %s\n", label);
-        printf("Publication time: %s\n", publication_time);
+        printf("Publication time: %.4s-%.2s-%.2s %.2s:%.2s:%.2s\n", publication_time,
+        publication_time + 4, publication_time + 6, publication_time + 9,
+    publication_time + 11, publication_time + 13);
         printf("Availability: %s\n", availability);
 
         i++;
@@ -253,8 +255,6 @@ int ds_tcp_communication( char *message, char *response, struct addrinfo *res_tc
     close(fd_tcp);
     return 1;
 }
-
-
 
 void ds_reply(char *response, User *user) {
     char command[MAXSIZE];
@@ -413,14 +413,22 @@ int main(int argc, char *argv[]) {
     if(argc >= 5) {   
         if ((strcmp(argv[3],"-n")) == 0)  {                         
             strcpy(dsip, argv[4]);
-        } else {
+        } else if ((strcmp(argv[3], "-p")) == 0){
            strcpy(dsport, argv[4]); 
+        } else {
+            printf("Invalid input\n");
+            exit(1);
         }
         if (argc == 7) {
-            strcpy(dsport, argv[6]);
+            if(strcmp(argv[3], "-n") == 0 && strcmp(argv[5], "-p") == 0) {
+                strcpy(dsport, argv[6]);
+            } else {
+            printf("Invalid input\n");
+            exit(1);
+            }
         }
     }
-    if (argc == 3 || argc == 7 || argc == 5) {
+    
         user.peerport = peerport;
 
         fd = socket(AF_INET, SOCK_DGRAM, 0);
@@ -539,7 +547,7 @@ int main(int argc, char *argv[]) {
                 if (n != 1) {
                     printf("Incorrect arguments\n");
                     continue;
-}
+                }
                 if (!valid_filename(filename)) {
                     printf("Incorrect arguments\n");
                     continue;
@@ -575,7 +583,7 @@ int main(int argc, char *argv[]) {
                 printf("Unknown command\n");
             } 
         }
-    }
+    
     freeaddrinfo(res);
     freeaddrinfo(res_tcp);
     close(fd);
@@ -591,3 +599,4 @@ int main(int argc, char *argv[]) {
 
 //melhorias ainda por ver:
 //sscanf(buffer, "%*s %24s %20s", filename, label);   para o sscanf nao dar overflow
+// ver se é preciso limitar "logout lixo" com "extra"
