@@ -17,7 +17,8 @@
 #define LABELSIZE 20
 #define LABEL_MIN 1
 
-typedef struct {
+//struct para guardar o estado e os dados do utilizador atual
+typedef struct { 
     int logged_in;
     char uid[UID_SIZE + 1];
     char password[PASSWORD_SIZE + 1];
@@ -25,7 +26,7 @@ typedef struct {
 } User;
 
 int valid_uid(const char *uid) {
-    if (strlen(uid) != UID_SIZE) {                                 // user ID tem de ter exatamente 6 dígitos
+    if (strlen(uid) != UID_SIZE) { //user ID tem de ter exatamente 6 dígitos
         return 0;
     }
     for (int i = 0; i < UID_SIZE; i++) {                                    
@@ -37,14 +38,14 @@ int valid_uid(const char *uid) {
 }
 
 int valid_password (const char *password) {
-    if (strlen(password) != PASSWORD_SIZE) {                        // password tem de ter exatamente 8 caractéres alfanuméricos
+    if (strlen(password) != PASSWORD_SIZE) { //password tem de ter exatamente 8 caractéres alfanuméricos
         return 0;
     }
     for (int i = 0; i < PASSWORD_SIZE; i++) {
         char c = password[i];
         if (!((c >= '0' && c <= '9') ||
               (c >= 'A' && c <= 'Z') ||
-              (c >= 'a' && c <= 'z'))) {
+              (c >= 'a' && c <= 'z'))) { //veriricamos se o carater nao pertence a nuehum detes grupos: numeros, letras maiusculas e minusculas
             return 0;
         }
     }
@@ -61,16 +62,17 @@ int valid_filename(char *filename) {
     } 
     int i = 0;
     while (filename[i] != '.' && filename[i] != '\0') {
-        if (!isalnum(filename[i]) && filename[i] != '_' && filename[i] != '-') {
+        if (!isalnum(filename[i]) && filename[i] != '_' && filename[i] != '-') { //antes do ponto so pode haver letras/numeros - _
             return 0; 
         }
         i++;
     }
-    if (filename[i] != '.' || i == 0) { // garante que tem ponto e existe um caracter antes o ponto
+    if (filename[i] != '.' || i == 0) { //garante que tem extensão(ponto) e existe um caracter antes o ponto
         return 0;
     }
-    i++;  // passar o .
+    i++;  // saltar o ponto
     for (int j = 0; j < 3; j++) {
+        //se chegarmos ao fim da string antes dos 3 caracteres ou se tiver algum caracter nao alfanumerico, é invalido
         if (filename[i + j] == '\0' || !isalnum(filename[i + j])) {
             return 0;
         }
@@ -113,7 +115,7 @@ void clear_user(User *user) {
 
 int open_file(char *filename) {
     FILE *file = fopen(filename, "rb"); //rb = read binary
-    if (file == NULL) {
+    if (file == NULL) { //caso nao consiga abrir o ficheiro
         return -1;
     }
     if (fseek(file, 0, SEEK_END) != 0) {
@@ -131,7 +133,7 @@ int open_file(char *filename) {
 }
 
 void convert_ds(char *command, User *user, char * ds_command, char *filename, int Fsize, char *label) {
-    
+    //ds_command é o buffer onde vai ficar a mensagem para o server
     if(strcmp(command, "login") == 0) {
         sprintf(ds_command, "LIN %s %s %d\n", user->uid, user->password, user->peerport);
     } else if (strcmp(command, "logout") == 0) {
@@ -150,37 +152,38 @@ void convert_ds(char *command, User *user, char * ds_command, char *filename, in
     } 
 }
 
+//envia mensagem ao DS atraves de UDP, espera pela resposta e mete a resposta no response
 int ds_communication(int fd, char *message, char *response, struct addrinfo *res) {
-    ssize_t n;
+    ssize_t n; //numero de bytes lidos/enviados
     n = sendto(fd, message, strlen(message), 0, res->ai_addr, res->ai_addrlen);
     if (n == -1) {
         perror("sendto");
         return 0;
     }
-    n = recvfrom(fd, response, MAXSIZE - 1, 0, NULL, NULL);
+    n = recvfrom(fd, response, MAXSIZE - 1, 0, NULL, NULL); //-1 para deixar espaço para o \0 no final da string caso a resposta seja exatamente MAXSIZE
     if (n == -1) {
         perror("recvfrom");
         return 0;
     }
     
-    response[n] = '\0'; // Null-terminate the received string
+    response[n] = '\0'; //adiciona o terminador de string no final da resposta
     return 1;
 
 }
 
 void print_list(char *response) {
     char copy[MAXSIZE];
-    strcpy(copy, response); //copy = "RLS OK foto.jpg trabalho.pdf teste.txt\n"
+    strcpy(copy, response); //copy = "RLS OK foto.jpg trabalho.pdf teste.txt\n" porque o strtok altera a string original
 
-    char *token = strtok(copy, " \n");  // RLS
-    token = strtok(NULL, " \n");        // OK e o NULL é para comecar na msm string onde estava
-    token = strtok(NULL, " \n");        // primeiro filename
+    char *token = strtok(copy, " \n");  //RLS
+    token = strtok(NULL, " \n");        //OK e o NULL é para comecar na msm string onde estava
+    token = strtok(NULL, " \n");        //primeiro filename
 
     int i = 1;
     while(token != NULL) {
         printf("%d %s\n", i, token);
         i++;
-        token = strtok(NULL, " \n"); //separar por newline ou espaço
+        token = strtok(NULL, " \n"); //separar ppor espaço ou newline, vai buscar o proximo filename
     }
     
 }
@@ -189,8 +192,8 @@ void print_versions(char *response){
     char copy[MAXSIZE];
     strcpy(copy, response);
 
-    char *token = strtok(copy, " \n");  // RVS
-    token = strtok(NULL, " \n");        // OK e o NULL é para comecar na msm string onde estava
+    char *token = strtok(copy, " \n");  //RVS
+    token = strtok(NULL, " \n");        //OK 
 
     char *uid;
     char *fsize;
@@ -205,7 +208,7 @@ void print_versions(char *response){
         publication_time = strtok(NULL, " \n");
         availability = strtok(NULL, " \n");
 
-        if (fsize == NULL || label == NULL || publication_time == NULL || availability == NULL) {
+        if (fsize == NULL || label == NULL || publication_time == NULL || availability == NULL) { //se algum campo tiver em falta
             printf("Invalid DS response\n");
             return;
         }
@@ -219,7 +222,7 @@ void print_versions(char *response){
     publication_time + 11, publication_time + 13);
         printf("Availability: %s\n", availability);
 
-        i++;
+        i++; //passamos para o numero da proxima versão
     }
 }
 
@@ -232,7 +235,7 @@ int ds_tcp_communication( char *message, char *response, struct addrinfo *res_tc
         perror("socket");
         return 0;
     }
-    if (connect(fd_tcp, res_tcp->ai_addr, res_tcp->ai_addrlen) == -1) {
+    if (connect(fd_tcp, res_tcp->ai_addr, res_tcp->ai_addrlen) == -1) { //inicia a ligação TCP com o DS
         perror("connect");
         close(fd_tcp);
         return 0;
@@ -245,27 +248,28 @@ int ds_tcp_communication( char *message, char *response, struct addrinfo *res_tc
         return 0;
     }
     
-    n = read(fd_tcp, response, MAXSIZE - 1);
+    n = read(fd_tcp, response, MAXSIZE - 1); //lê a resposta do DS
         if (n == -1) {
         perror("read");
         close(fd_tcp);
         return 0;
     }
-    response[n] = '\0';
+    response[n] = '\0'; //transforma os bytes recebidos numa string valida
     close(fd_tcp);
     return 1;
 }
 
+//recebe a resposta do DS e imprime a mensagem apropriada para o utilizador
 void ds_reply(char *response, User *user) {
-    char command[MAXSIZE];
-    char status [MAXSIZE];
+    char command[MAXSIZE]; // RLI, RLO, RUR, RPB, RRM, RLS, RVR
+    char status [MAXSIZE]; // OK, REG, NOK, NLG, UNR, WRP
     int n = sscanf(response, "%s %s\n", command, status);
 
     if (n ==1 && strcmp(command, "ERR") == 0) {
         printf("error\n");  //nao sei qual o output, nao encontro no enunciado
         return;
     }
-    if(n != 2) {
+    if(n != 2) { //o resto tem que ter exatamente 2 campos
         printf("Invalid DS response\n");
         return;
     }
@@ -368,22 +372,23 @@ int main(int argc, char *argv[]) {
     clear_user(&user);
     user.peerport = 0;
     
-    char buffer[MAXSIZE];
+    char buffer[MAXSIZE]; //guarda linha escrita no terminal (pelo user)
     char command[MAXSIZE];
 
+    //auxiliar porque só depois de validar é que copiamos para user
     char uid_aux[MAXSIZE];
     char password_aux[MAXSIZE];
     
     char dsip[MAXSIZE] = "tejo.tecnico.ulisboa.pt"; //argumento default proque os argumentos sao opcionais
     char dsport[MAXSIZE] = "59000";
-    char ds_command[MAXSIZE];
-    char response[MAXSIZE];
+    char ds_command[MAXSIZE]; //mensagem enviada para o DS
+    char response[MAXSIZE]; //resposta recebida do DS
 
     char filename[MAXSIZE];
     char label[MAXSIZE];
 
-    struct addrinfo hints;
-    struct addrinfo *res;
+    struct addrinfo hints; //infromações sobre o tipo de socket que queremos criar
+    struct addrinfo *res; //o que o getaddrinfo vai devolver, que contem a informação do DS
     struct addrinfo hints_tcp;
     struct addrinfo *res_tcp;
     int fd, errcode, Fsize = 0;
@@ -402,7 +407,7 @@ int main(int argc, char *argv[]) {
             exit(1);
         }
     }
-    int peerport = atoi(argv[2]);
+    int peerport = atoi(argv[2]); //converter string para int
     if (!valid_peerport(peerport)) {
         printf("invalid peerport\n");
         exit(1);
@@ -410,7 +415,7 @@ int main(int argc, char *argv[]) {
 
     user.peerport = peerport;
 
-    if(argc >= 5) {   
+    if(argc >= 5) {  //existe pelo menos uma opcao -n ou -p
         if ((strcmp(argv[3],"-n")) == 0)  {                         
             strcpy(dsip, argv[4]);
         } else if ((strcmp(argv[3], "-p")) == 0){
@@ -419,7 +424,7 @@ int main(int argc, char *argv[]) {
             printf("Invalid input\n");
             exit(1);
         }
-        if (argc == 7) {
+        if (argc == 7) { //existe as duas opcoes -n e -p
             if(strcmp(argv[3], "-n") == 0 && strcmp(argv[5], "-p") == 0) {
                 strcpy(dsport, argv[6]);
             } else {
@@ -429,31 +434,31 @@ int main(int argc, char *argv[]) {
         }
     }
     
-        user.peerport = peerport;
+        user.peerport = peerport; //?? apagar
 
         fd = socket(AF_INET, SOCK_DGRAM, 0);
         if (fd == -1) exit(1);
         
         memset(&hints, 0, sizeof(hints));
-        hints.ai_family = AF_INET;
-        hints.ai_socktype = SOCK_DGRAM;
+        hints.ai_family = AF_INET; //endereços IPv4
+        hints.ai_socktype = SOCK_DGRAM; //UDP
 
         errcode = getaddrinfo(dsip, dsport, &hints, &res);
         if (errcode != 0) exit(1);
                
         memset(&hints_tcp, 0, sizeof(hints_tcp));
-        hints_tcp.ai_family = AF_INET;
-        hints_tcp.ai_socktype = SOCK_STREAM;
+        hints_tcp.ai_family = AF_INET; //endereços IPv4
+        hints_tcp.ai_socktype = SOCK_STREAM; //TCP
 
         errcode = getaddrinfo(dsip, dsport, &hints_tcp, &res_tcp);
         if (errcode != 0) exit(1);
 
   
         while(1) {
-            if(fgets(buffer, MAXSIZE, stdin) == NULL) {
+            if(fgets(buffer, MAXSIZE, stdin) == NULL) { //lê a linha escrita no terminal
                 break;
             }
-            sscanf(buffer, "%s", command);
+            sscanf(buffer, "%s", command); //retiramos a primeira palavra(comando ex.login)
             
             // LOGIN
             if (strcmp(command, "login") == 0) {
@@ -462,18 +467,18 @@ int main(int argc, char *argv[]) {
                     printf("Incorrect arguments\n");
                     continue;
                 }
-                if(user.logged_in) {
+                if(user.logged_in) { //se já existe alguem logged in, nao permitimos outro login
                     printf("Please logout first\n");
                     continue;
                 }
         
-                if(valid_input(uid_aux, password_aux)) {                   // verifica o  input
+                if(valid_input(uid_aux, password_aux)) {                   //verifica o input
                     
                     strcpy(user.uid, uid_aux);
                     strcpy(user.password, password_aux);
-                    convert_ds(command, &user, ds_command, filename, Fsize, label);     // converte dados do user numa mensagem para DS
-                    if (ds_communication(fd, ds_command, response, res)) {              // envia a mensagem para o DS e recebe resposta
-                        ds_reply(response, &user);
+                    convert_ds(command, &user, ds_command, filename, Fsize, label);     //converte dados do user numa mensagem para DS
+                    if (ds_communication(fd, ds_command, response, res)) {              //envia a mensagem para o DS e recebe resposta
+                        ds_reply(response, &user);  //interpreta a resposta do DS
                     }
                 } else {
                     printf("Incorrect arguments\n");
@@ -481,7 +486,7 @@ int main(int argc, char *argv[]) {
                 
             // LOGOUT
             } else if (strcmp(command, "logout") == 0) {
-                if (!user.logged_in) {
+                if (!user.logged_in) { //so faz log out se estiver alguem logged in
                     printf("Please login first\n");
                     continue;
                 }
@@ -494,7 +499,7 @@ int main(int argc, char *argv[]) {
 
             // UNREGISTER
             }  else if (strcmp(command, "unregister") == 0) {
-                if (!user.logged_in) {
+                if (!user.logged_in) { //so faz unregister se estiver alguem logged in
                     printf("Please login first\n");
                     continue;
                 }
@@ -517,12 +522,12 @@ int main(int argc, char *argv[]) {
                     continue;
                 }
 
-                int n = sscanf(buffer, "%*s %s %s", filename, label); 
+                int n = sscanf(buffer, "%*s %s %s", filename, label);  //ignoramos a primeira palavra e lemos o filename e label
                 if (n != 2) {
                     printf("Incorrect arguments\n");
                     continue;
                 }
-                Fsize = open_file(filename);
+                Fsize = open_file(filename); //tenta abrir o ficheiro e obter o tamanho
                 if (Fsize == -1) {
                     printf ("File does not exist\n");
                     continue;
