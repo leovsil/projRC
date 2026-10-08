@@ -224,8 +224,12 @@ void print_versions(char *response){
         printf("Publication time: %.4s-%.2s-%.2s %.2s:%.2s:%.2s\n", publication_time,
         publication_time + 4, publication_time + 6, publication_time + 9,
     publication_time + 11, publication_time + 13);
-        printf("Availability: %s\n", availability);
-
+        if(strcmp(availability, "AVL")) {
+            printf("Availability: Available\n");
+        } else {
+            printf("Availability: Not Available\n");
+        }
+        printf("\n");
         i++; // passamos para o numero da proxima versão
     }
 }
@@ -601,7 +605,7 @@ int main(int argc, char *argv[]) {
     return 0;
     
 }
-//login\1234567\0abc123456\n
+//./user -m 58001 -n 193.136.138.142 -p 59000
 // ./user -m peerport [-n DSIP] [-p DSport]
 
 //login 675846 abcdef12
