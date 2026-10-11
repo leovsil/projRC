@@ -236,7 +236,7 @@ void print_versions(char *response){
 
 // comunicaação com o DS através de TCP onde se envia e recebe a resposta do DS
 int ds_tcp_communication( char *message, char *response, struct addrinfo *res_tcp) {
-    int fd_tcp;
+    int fd_tcp, total = 0;
     ssize_t n;
     
     fd_tcp = socket(AF_INET, SOCK_STREAM, 0);
@@ -250,20 +250,37 @@ int ds_tcp_communication( char *message, char *response, struct addrinfo *res_tc
         return 0;
     }
 
-    // a verificar com a professora
     n = write(fd_tcp, message, strlen(message));    // envia mensagem para o DS 
+    
     if (n == -1) {
         perror("write");
         close(fd_tcp);
         return 0;
     }
-    
-    n = read(fd_tcp, response, MAXSIZE - 1); // lê a resposta do DS
-        if (n == -1) {
-        perror("read");
+    if (n != strlen(message)) {
+        perror("write");
         close(fd_tcp);
         return 0;
     }
+    
+    while (total < MAXSIZE - 1) {
+        n = read(fd_tcp, response + total, MAXSIZE - 1 - total);
+        if (n == -1) {
+            perror("read");
+            close(fd_tcp);
+            return 0;
+        }
+
+        // o outro lado fechou a conexão
+        if (n == 0) {
+            break;
+        }
+        total += n;
+        if (response[total - 1] == '\n') {
+            break;
+        }
+    }
+
     response[n] = '\0'; // transforma os bytes recebidos numa string valida
     close(fd_tcp);
     return 1;
