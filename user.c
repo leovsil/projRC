@@ -137,7 +137,7 @@ int open_file(char *filename) {
     return bytes;
 }
 
-void convert_ds(char *command, User *user, char * ds_command, char *filename, int Fsize, char *label) {
+void convert_ds(char *command, User *user, char * ds_command, char *filename, int Fsize, char *label,char *peer_uid) {
     // ds_command é o buffer onde vai ficar a mensagem para o server
     if(strcmp(command, "login") == 0) {
         sprintf(ds_command, "LIN %s %s %d\n", user->uid, user->password, user->peerport);
@@ -155,7 +155,7 @@ void convert_ds(char *command, User *user, char * ds_command, char *filename, in
     } else if (strcmp(command, "versions") == 0) {
         sprintf(ds_command, "VRS %s\n", filename);
     } else if (strcmp(command, "where") == 0) {
-        sprintf(ds_command, "WHR %s %s\n", filename, user->uid);
+        sprintf(ds_command, "WHR %s %s\n", filename, peer_uid);
     } 
 }
 
@@ -238,7 +238,7 @@ void print_versions(char *response){
         printf("Publication time: %.4s-%.2s-%.2s %.2s:%.2s:%.2s\n", publication_time,
         publication_time + 4, publication_time + 6, publication_time + 9,
     publication_time + 11, publication_time + 13);
-        if(strcmp(availability, "AVL")==0) {
+        if(strcmp(availability, "AVL") == 0) {
             printf("Availability: Available\n");
         } else {
             printf("Availability: Not Available\n");
@@ -404,16 +404,15 @@ void ds_reply(char *response, User *user, char *peer_ip, int *peer_tcpport) {
         } else if (strcmp(status, "NOK") == 0) {
             printf("No versions available\n");
         }
-    } if (strcmp(command, "RWH") == 0) {                      // LOGIN
+    } else if (strcmp(command, "RWH") == 0) {                      // LOGIN
         if(strcmp(status, "OK") == 0) {                     
-            sscanf(response, "RWH OK %15s %d", peer_ip, peer_tcpport);
-            printf("Successful login\n");
+            if(sscanf(response, "RWH OK %15s %d", peer_ip, peer_tcpport) == 2) {
+                printf("Peer available found IP: %s, TCP port: %d\n", peer_ip, *peer_tcpport);
+            }
 
         } else if (strcmp(status, "NOK") == 0) {
-            printf("No File found\n");
-            clear_user(user);
-        }
-    } 
+            printf("No file found available\n");
+        } 
     } else {
         printf("Unknown command from DS: %s\n", command);
     }
@@ -447,6 +446,7 @@ int main(int argc, char *argv[]) {
     
     char peer_ip[16];
     int peer_tcpport;
+    char peer_uid[UID_SIZE + 1];
 
     if(argc != 3 && argc != 5 && argc != 7) {
         printf("Usage: %s -m peerport [-n DSIP] [-p DSport]\n", argv[0]);
@@ -540,9 +540,9 @@ int main(int argc, char *argv[]) {
                     
                     strcpy(user.uid, uid_aux);
                     strcpy(user.password, password_aux);
-                    convert_ds(command, &user, ds_command, filename, Fsize, label);     //converte dados do user numa mensagem para DS
+                    convert_ds(command, &user, ds_command, filename, Fsize, label, peer_uid);     //converte dados do user numa mensagem para DS
                     if (ds_communication(fd, ds_command, response, res)) {              //envia a mensagem para o DS e recebe resposta
-                        ds_reply(response, &user);  //interpreta a resposta do DS
+                        ds_reply(response, &user, peer_ip, &peer_tcpport);  //interpreta a resposta do DS
                     }
                 } else {
                     printf("Incorrect arguments\n");
@@ -555,9 +555,9 @@ int main(int argc, char *argv[]) {
                     continue;
                 }
 
-                convert_ds(command, &user, ds_command, filename, Fsize, label);                     // comunicação com o DS 
+                convert_ds(command, &user, ds_command, filename, Fsize, label, peer_uid);                     // comunicação com o DS 
                 if (ds_communication(fd, ds_command, response, res)) {
-                    ds_reply(response, &user);
+                    ds_reply(response, &user, peer_ip, &peer_tcpport);
                 } 
                 
             // UNREGISTER
@@ -567,9 +567,9 @@ int main(int argc, char *argv[]) {
                     continue;
                 }
                 
-                convert_ds(command, &user, ds_command, filename, Fsize, label);                     // comunicação com o DS
+                convert_ds(command, &user, ds_command, filename, Fsize, label, peer_uid);                     // comunicação com o DS
                 if (ds_communication(fd, ds_command, response, res)) {
-                    ds_reply(response, &user);
+                    ds_reply(response, &user, peer_ip, &peer_tcpport);
                 }
                 
             // EXIT
@@ -599,9 +599,9 @@ int main(int argc, char *argv[]) {
                     printf("Invalid file\n");
                     continue;
                 }
-                convert_ds(command, &user, ds_command, filename, Fsize, label);                     // comunicação com o DS 
+                convert_ds(command, &user, ds_command, filename, Fsize, label, peer_uid);                     // comunicação com o DS 
                 if (ds_communication(fd, ds_command, response, res)) {
-                    ds_reply(response, &user);
+                    ds_reply(response, &user, peer_ip, &peer_tcpport);
                 } 
 
             // REMOVE 
@@ -619,16 +619,16 @@ int main(int argc, char *argv[]) {
                     printf("Incorrect arguments\n");
                     continue;
                 }
-                convert_ds(command, &user, ds_command, filename, Fsize, label);                     // comunicação com o DS 
+                convert_ds(command, &user, ds_command, filename, Fsize, label, peer_uid);                     // comunicação com o DS 
                 if (ds_communication(fd, ds_command, response, res)) {
-                    ds_reply(response, &user);
+                    ds_reply(response, &user, peer_ip, &peer_tcpport);
                 }
                
             // LIST
             } else if (strcmp(command, "list") == 0) {
-                convert_ds(command, &user, ds_command, filename, Fsize, label);                     // comunicação com o DS 
+                convert_ds(command, &user, ds_command, filename, Fsize, label, peer_uid);                     // comunicação com o DS 
                 if (ds_communication(fd, ds_command, response, res)) {
-                    ds_reply(response, &user);
+                    ds_reply(response, &user, peer_ip, &peer_tcpport);
                 }
 
             // VERSIONS
@@ -643,26 +643,25 @@ int main(int argc, char *argv[]) {
                     printf("Invalid file\n");
                     continue;
                 }
-                convert_ds(command, &user, ds_command, filename, Fsize, label);                     // comunicação com o DS 
+                convert_ds(command, &user, ds_command, filename, Fsize, label, peer_uid);                     // comunicação com o DS 
                 if (ds_tcp_communication(ds_command, response, res_tcp)) {
-                    ds_reply(response, &user);
+                    ds_reply(response, &user, peer_ip, &peer_tcpport);
                 } 
 
             }  else if(strcmp(command, "where") == 0) {
-                int n = sscanf(buffer, "%*s %s", filename); 
-                if (n != 1) {
+                int n = sscanf(buffer, "%*s %s %s", filename, peer_uid); 
+                if (n != 2) {
                     printf("Incorrect arguments\n");
                     continue;
                 }
-                if (!valid_filename(filename)) {
-                    printf("Invalid file\n");
+                if (!valid_filename(filename) || !valid_uid(peer_uid)) {
+                    printf("Invalid arguments\n");
                     continue;
                 }
-                convert_ds(command, &user, ds_command, filename, Fsize, label);                     // comunicação com o DS 
-                if (ds_tcp_communication(ds_command, response, res_tcp)) {
-                    ds_reply(response, &user);
+                convert_ds(command, &user, ds_command, filename, Fsize, label, peer_uid);                     // comunicação com o DS 
+                if (ds_communication(fd, ds_command, response, res)) {
+                    ds_reply(response, &user, peer_ip, &peer_tcpport);
                 } 
-            }
             // comando nao reconhecido
             } else {
                 printf("Unknown command\n");
