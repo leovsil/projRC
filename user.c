@@ -193,7 +193,11 @@ void print_list(char *response) {
 
 // imprime que versoes ha disponiveis do ficheiro segundo as informações do DS
 void print_versions(char *response){
-    char copy[MAXSIZE];
+    char *copy = malloc(strlen(response) + 1);
+    if (copy == NULL) {
+        perror("malloc");
+        return;
+    }
     strcpy(copy, response);
 
     char *token = strtok(copy, " \n");  // RVS
@@ -214,6 +218,7 @@ void print_versions(char *response){
 
         if (fsize == NULL || label == NULL || publication_time == NULL || availability == NULL) { // se algum campo tiver em falta
             printf("Invalid DS response\n");
+            free(copy);
             return;
         }
 
@@ -224,7 +229,7 @@ void print_versions(char *response){
         printf("Publication time: %.4s-%.2s-%.2s %.2s:%.2s:%.2s\n", publication_time,
         publication_time + 4, publication_time + 6, publication_time + 9,
     publication_time + 11, publication_time + 13);
-        if(strcmp(availability, "AVL")) {
+        if(strcmp(availability, "AVL")==0) {
             printf("Availability: Available\n");
         } else {
             printf("Availability: Not Available\n");
@@ -232,6 +237,7 @@ void print_versions(char *response){
         printf("\n");
         i++; // passamos para o numero da proxima versão
     }
+    free(copy);
 }
 
 // comunicaação com o DS através de TCP onde se envia e recebe a resposta do DS
