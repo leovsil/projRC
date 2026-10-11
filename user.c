@@ -27,11 +27,6 @@ typedef struct {
     int peerport;
 } User;
 
-typedef struct {
-    
-}
-
-
 
 int valid_uid(const char *uid) {
     if (strlen(uid) != UID_SIZE) { //user ID tem de ter exatamente 6 dígitos
@@ -307,7 +302,7 @@ int ds_tcp_communication( char *message, char *response, struct addrinfo *res_tc
 }
 
 // recebe a resposta do DS e imprime a mensagem apropriada para o utilizador
-void ds_reply(char *response, User *user) {
+void ds_reply(char *response, User *user, char *peer_ip, int *peer_tcpport) {
     char command[MAXSIZE]; // RLI, RLO, RUR, RPB, RRM, RLS, RVR
     char status [MAXSIZE]; // OK, REG, NOK, NLG, UNR, WRP
     int n = sscanf(response, "%s %s\n", command, status);
@@ -410,9 +405,8 @@ void ds_reply(char *response, User *user) {
             printf("No versions available\n");
         }
     } if (strcmp(command, "RWH") == 0) {                      // LOGIN
-        
         if(strcmp(status, "OK") == 0) {                     
-            user->logged_in = 1;
+            sscanf(response, "RWH OK %15s %d", peer_ip, peer_tcpport);
             printf("Successful login\n");
 
         } else if (strcmp(status, "NOK") == 0) {
@@ -451,6 +445,9 @@ int main(int argc, char *argv[]) {
     struct addrinfo *res_tcp;
     int fd, errcode, Fsize = 0;
     
+    char peer_ip[16];
+    int peer_tcpport;
+
     if(argc != 3 && argc != 5 && argc != 7) {
         printf("Usage: %s -m peerport [-n DSIP] [-p DSport]\n", argv[0]);
         exit(1);
