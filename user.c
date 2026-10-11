@@ -27,7 +27,9 @@ typedef struct {
     int peerport;
 } User;
 
-
+typedef struct {
+    
+}
 
 
 
@@ -157,6 +159,8 @@ void convert_ds(char *command, User *user, char * ds_command, char *filename, in
         sprintf(ds_command, "LST\n");
     } else if (strcmp(command, "versions") == 0) {
         sprintf(ds_command, "VRS %s\n", filename);
+    } else if (strcmp(command, "where") == 0) {
+        sprintf(ds_command, "WHR %s %s\n", filename, user->uid);
     } 
 }
 
@@ -405,6 +409,17 @@ void ds_reply(char *response, User *user) {
         } else if (strcmp(status, "NOK") == 0) {
             printf("No versions available\n");
         }
+    } if (strcmp(command, "RWH") == 0) {                      // LOGIN
+        
+        if(strcmp(status, "OK") == 0) {                     
+            user->logged_in = 1;
+            printf("Successful login\n");
+
+        } else if (strcmp(status, "NOK") == 0) {
+            printf("No File found\n");
+            clear_user(user);
+        }
+    } 
     } else {
         printf("Unknown command from DS: %s\n", command);
     }
@@ -635,7 +650,22 @@ int main(int argc, char *argv[]) {
                 if (ds_tcp_communication(ds_command, response, res_tcp)) {
                     ds_reply(response, &user);
                 } 
-            
+
+            }  else if(strcmp(command, "where") == 0) {
+                int n = sscanf(buffer, "%*s %s", filename); 
+                if (n != 1) {
+                    printf("Incorrect arguments\n");
+                    continue;
+                }
+                if (!valid_filename(filename)) {
+                    printf("Invalid file\n");
+                    continue;
+                }
+                convert_ds(command, &user, ds_command, filename, Fsize, label);                     // comunicação com o DS 
+                if (ds_tcp_communication(ds_command, response, res_tcp)) {
+                    ds_reply(response, &user);
+                } 
+            }
             // comando nao reconhecido
             } else {
                 printf("Unknown command\n");
