@@ -7,6 +7,8 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>
+#include <sys/time.h>
+#include <errno.h>
 #define MAXSIZE 2048        // a definir
 #define UID_SIZE 6
 #define PASSWORD_SIZE 8
@@ -24,6 +26,10 @@ typedef struct {
     char password[PASSWORD_SIZE + 1];
     int peerport;
 } User;
+
+
+
+
 
 int valid_uid(const char *uid) {
     if (strlen(uid) != UID_SIZE) { //user ID tem de ter exatamente 6 dígitos
@@ -164,8 +170,12 @@ int ds_communication(int fd, char *message, char *response, struct addrinfo *res
     }
     n = recvfrom(fd, response, MAXSIZE - 1, 0, NULL, NULL); //-1 para deixar espaço para o \0 no final da string caso a resposta seja exatamente MAXSIZE
     if (n == -1) {
-        perror("recvfrom");
-        return 0;
+        if (errno == EAGAIN || errno == EWOULDBLOCK) {
+            printf("Timeout\n");
+        } else {
+            perror("recvfrom");
+        }
+        exit(1);
     }
     
     response[n] = '\0'; //adiciona o terminador de string no final da resposta
@@ -485,7 +495,17 @@ int main(int argc, char *argv[]) {
         errcode = getaddrinfo(dsip, dsport, &hints_tcp, &res_tcp);      
         if (errcode != 0) exit(1);
 
-  
+        struct timeval timeout;
+        timeout.tv_sec = 5;
+        timeout.tv_usec = 0;
+
+        if (setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) == -1) {
+            perror("setsockopt");
+            close(fd);
+            exit(1);
+        }   
+
+
         while(1) {
             if(fgets(buffer, MAXSIZE, stdin) == NULL) { //lê a linha escrita no terminal
                 break;
