@@ -574,8 +574,11 @@ int main(int argc, char *argv[]) {
             testfds = inputs;               //copiar os descriptors para testfds que queremos monitorizar 
             int n = select(max_fd + 1, &testfds, NULL, NULL, NULL);
             if (n == -1) {
+                if (errno == EINTR) {
+                    continue;
+                }
                 perror("select");
-                exit(1);
+                break;
             }
             if (FD_ISSET(STDIN_FILENO, &testfds)) { //verifica se o terminal tem dados para ler
                 if(fgets(buffer, MAXSIZE, stdin) == NULL) { //lê a linha escrita no terminal
@@ -725,6 +728,7 @@ int main(int argc, char *argv[]) {
                 } else {
                     printf("Unknown command\n");
                 } 
+            }
             if (FD_ISSET(fd_peer, &testfds)){
                 int fd_client = accept(fd_peer, NULL, NULL);
                 if (fd_client == -1) {
@@ -753,11 +757,13 @@ int main(int argc, char *argv[]) {
                 }
                 close(fd_client); // apenas aceitamos a conexão e fechamos, não há comunicação com o peer
             }
+        
         }
     
     freeaddrinfo(res);
     freeaddrinfo(res_tcp);
     close(fd);
+    close(fd_peer); 
     return 0;
     
 }
