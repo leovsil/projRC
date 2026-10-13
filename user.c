@@ -733,8 +733,24 @@ int main(int argc, char *argv[]) {
                 }
 
                 //get()
+                if(strcmp(command, "get") == 0) {
+                    if (!user.logged_in) { 
+                        printf("Please login first\n");
+                        continue;
+                    }
+                    int n = sscanf(buffer, "%*s %s", filename); 
+                    if (n != 1) {
+                        printf("Incorrect arguments\n");
+                        continue;
+                    }
+                    if (!valid_filename(filename)) {
+                        printf("Invalid file\n");
+                        continue;
+                    }
+                    
+                
 
-
+                }
                 close(fd_client); // apenas aceitamos a conexão e fechamos, não há comunicação com o peer
             }
         }
