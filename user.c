@@ -515,157 +515,228 @@ int main(int argc, char *argv[]) {
             perror("setsockopt");
             close(fd);
             exit(1);
-        }   
+        }
+        
+        int fd_peer;
+        fd_peer = socket(AF_INET, SOCK_STREAM, 0);
+        if (fd_peer == -1) {
+            perror("socket");
+            exit(1);
+        }
 
+        struct addrinfo hints_peer, *res_peer;
+        char peerport_str[6];
+
+        sprintf(peerport_str, "%d", peerport);
+        memset(&hints_peer, 0, sizeof(hints_peer));
+
+        hints_peer.ai_family = AF_INET;  //endereços IPv4
+        hints_peer.ai_socktype = SOCK_STREAM; //TCP 
+        hints_peer.ai_flags = AI_PASSIVE;
+
+        errcode = getaddrinfo(NULL, peerport_str, &hints_peer, &res_peer);
+
+        if (errcode != 0) {
+            fprintf(stderr, "getaddrinfo: %s\n", gai_strerror(errcode));
+            close(fd_peer);
+            exit(1);
+        }
+
+        if (bind(fd_peer, res_peer->ai_addr, res_peer->ai_addrlen) == -1) {
+            perror("bind");
+            freeaddrinfo(res_peer);
+            close(fd_peer);
+            exit(1);
+        }
+
+        freeaddrinfo(res_peer);
+
+        if (listen(fd_peer, 5) == -1) {
+            perror("listen");
+            close(fd_peer);
+            exit(1);
+        }
+
+        fd_set inputs, testfds;
+        FD_ZERO(&inputs);
+        FD_SET(STDIN_FILENO, &inputs);         //terminal para ler comandos escritos pelo user
+        FD_SET(fd_peer, &inputs);             //novas conexões de peers
+
+        int max_fd;                          //maior descriptor que o select vai monitorizar
+        if (fd_peer > STDIN_FILENO) { 
+            max_fd = fd_peer;
+        } else {
+            max_fd = STDIN_FILENO;
+        }
 
         while(1) {
-            if(fgets(buffer, MAXSIZE, stdin) == NULL) { //lê a linha escrita no terminal
-                break;
+
+            testfds = inputs;               //copiar os descriptors para testfds que queremos monitorizar 
+            int n = select(max_fd + 1, &testfds, NULL, NULL, NULL);
+            if (n == -1) {
+                perror("select");
+                exit(1);
             }
-            sscanf(buffer, "%s", command); //retiramos a primeira palavra(comando ex.login)
-            
-            // LOGIN
-            if (strcmp(command, "login") == 0) {
-                int n = sscanf(buffer, "%*s %s %s", uid_aux, password_aux);
-                if (n != 2) {
-                    printf("Incorrect arguments\n");
-                    continue;
+            if (FD_ISSET(STDIN_FILENO, &testfds)) { //verifica se o terminal tem dados para ler
+                if(fgets(buffer, MAXSIZE, stdin) == NULL) { //lê a linha escrita no terminal
+                    break;
                 }
-                if(user.logged_in) { //se já existe alguem logged in, nao permitimos outro login
-                    printf("Please logout first\n");
-                    continue;
-                }
-        
-                if(valid_input(uid_aux, password_aux)) {                   //verifica o input
-                    
-                    strcpy(user.uid, uid_aux);
-                    strcpy(user.password, password_aux);
-                    convert_ds(command, &user, ds_command, filename, Fsize, label, peer_uid);     //converte dados do user numa mensagem para DS
-                    if (ds_communication(fd, ds_command, response, res)) {              //envia a mensagem para o DS e recebe resposta
-                        ds_reply(response, &user, peer_ip, &peer_tcpport);  //interpreta a resposta do DS
+                sscanf(buffer, "%s", command); //retiramos a primeira palavra(comando ex.login)
+                
+                // LOGIN
+                if (strcmp(command, "login") == 0) {
+                    int n = sscanf(buffer, "%*s %s %s", uid_aux, password_aux);
+                    if (n != 2) {
+                        printf("Incorrect arguments\n");
+                        continue;
                     }
+                    if(user.logged_in) { //se já existe alguem logged in, nao permitimos outro login
+                        printf("Please logout first\n");
+                        continue;
+                    }
+            
+                    if(valid_input(uid_aux, password_aux)) {                   //verifica o input
+                        
+                        strcpy(user.uid, uid_aux);
+                        strcpy(user.password, password_aux);
+                        convert_ds(command, &user, ds_command, filename, Fsize, label, peer_uid);     //converte dados do user numa mensagem para DS
+                        if (ds_communication(fd, ds_command, response, res)) {              //envia a mensagem para o DS e recebe resposta
+                            ds_reply(response, &user, peer_ip, &peer_tcpport);  //interpreta a resposta do DS
+                        }
+                    } else {
+                        printf("Incorrect arguments\n");
+                    }
+                    
+                // LOGOUT
+                } else if (strcmp(command, "logout") == 0) {
+                    if (!user.logged_in) { //so faz log out se estiver alguem logged in
+                        printf("Please login first\n");
+                        continue;
+                    }
+
+                    convert_ds(command, &user, ds_command, filename, Fsize, label, peer_uid);                     // comunicação com o DS 
+                    if (ds_communication(fd, ds_command, response, res)) {
+                        ds_reply(response, &user, peer_ip, &peer_tcpport);
+                    } 
+                    
+                // UNREGISTER
+                }  else if (strcmp(command, "unregister") == 0) {
+                    if (!user.logged_in) { //so faz unregister se estiver alguem logged in
+                        printf("Please login first\n");
+                        continue;
+                    }
+                    
+                    convert_ds(command, &user, ds_command, filename, Fsize, label, peer_uid);                     // comunicação com o DS
+                    if (ds_communication(fd, ds_command, response, res)) {
+                        ds_reply(response, &user, peer_ip, &peer_tcpport);
+                    }
+                    
+                // EXIT
+                } else if (strcmp(command, "exit") == 0) {
+                    if(user.logged_in) { printf("Please logout first\n");} 
+                    else { break; }                                           //acaba o programa
+
+                // PUBLISH 
+                } else if(strcmp(command, "publish") == 0) {
+                    if (!user.logged_in) {
+                        printf("please login first\n");
+                        continue;
+                    }
+
+                    int n = sscanf(buffer, "%*s %s %s", filename, label);  //ignoramos a primeira palavra e lemos o filename e label
+                    if (n != 2) {
+                        printf("Incorrect arguments\n");
+                        continue;
+                    }
+                    Fsize = open_file(filename); //tenta abrir o ficheiro e obter o tamanho
+                    if (Fsize == -1) {
+                        printf ("File does not exist\n");
+                        continue;
+                    }
+
+                    if (!valid_publish(filename, Fsize, label)) {
+                        printf("Invalid file\n");
+                        continue;
+                    }
+                    convert_ds(command, &user, ds_command, filename, Fsize, label, peer_uid);                     // comunicação com o DS 
+                    if (ds_communication(fd, ds_command, response, res)) {
+                        ds_reply(response, &user, peer_ip, &peer_tcpport);
+                    } 
+
+                // REMOVE 
+                } else if (strcmp(command, "remove") == 0) {
+                    if (!user.logged_in) {
+                        printf("Please login first\n");
+                        continue;
+                    }
+                    int n = sscanf(buffer, "%*s %s", filename);
+                    if (n != 1) {
+                        printf("Incorrect arguments\n");
+                        continue;
+                    }
+                    if (!valid_filename(filename)) {
+                        printf("Incorrect arguments\n");
+                        continue;
+                    }
+                    convert_ds(command, &user, ds_command, filename, Fsize, label, peer_uid);                     // comunicação com o DS 
+                    if (ds_communication(fd, ds_command, response, res)) {
+                        ds_reply(response, &user, peer_ip, &peer_tcpport);
+                    }
+                
+                // LIST
+                } else if (strcmp(command, "list") == 0) {
+                    convert_ds(command, &user, ds_command, filename, Fsize, label, peer_uid);                     // comunicação com o DS 
+                    if (ds_communication(fd, ds_command, response, res)) {
+                        ds_reply(response, &user, peer_ip, &peer_tcpport);
+                    }
+
+                // VERSIONS
+                } else if(strcmp(command, "versions") == 0) {
+
+                    int n = sscanf(buffer, "%*s %s", filename); 
+                    if (n != 1) {
+                        printf("Incorrect arguments\n");
+                        continue;
+                    }
+                    if (!valid_filename(filename)) {
+                        printf("Invalid file\n");
+                        continue;
+                    }
+                    convert_ds(command, &user, ds_command, filename, Fsize, label, peer_uid);                     // comunicação com o DS 
+                    if (ds_tcp_communication(ds_command, response, res_tcp)) {
+                        ds_reply(response, &user, peer_ip, &peer_tcpport);
+                    } 
+
+                }  else if(strcmp(command, "where") == 0) {
+                    int n = sscanf(buffer, "%*s %s %s", filename, peer_uid); 
+                    if (n != 2) {
+                        printf("Incorrect arguments\n");
+                        continue;
+                    }
+                    if (!valid_filename(filename) || !valid_uid(peer_uid)) {
+                        printf("Invalid arguments\n");
+                        continue;
+                    }
+                    convert_ds(command, &user, ds_command, filename, Fsize, label, peer_uid);                     // comunicação com o DS 
+                    if (ds_communication(fd, ds_command, response, res)) {
+                        ds_reply(response, &user, peer_ip, &peer_tcpport);
+                    } 
+                // comando nao reconhecido
                 } else {
-                    printf("Incorrect arguments\n");
-                }
-                
-            // LOGOUT
-            } else if (strcmp(command, "logout") == 0) {
-                if (!user.logged_in) { //so faz log out se estiver alguem logged in
-                    printf("Please login first\n");
-                    continue;
-                }
-
-                convert_ds(command, &user, ds_command, filename, Fsize, label, peer_uid);                     // comunicação com o DS 
-                if (ds_communication(fd, ds_command, response, res)) {
-                    ds_reply(response, &user, peer_ip, &peer_tcpport);
+                    printf("Unknown command\n");
                 } 
-                
-            // UNREGISTER
-            }  else if (strcmp(command, "unregister") == 0) {
-                if (!user.logged_in) { //so faz unregister se estiver alguem logged in
-                    printf("Please login first\n");
-                    continue;
-                }
-                
-                convert_ds(command, &user, ds_command, filename, Fsize, label, peer_uid);                     // comunicação com o DS
-                if (ds_communication(fd, ds_command, response, res)) {
-                    ds_reply(response, &user, peer_ip, &peer_tcpport);
-                }
-                
-            // EXIT
-            } else if (strcmp(command, "exit") == 0) {
-                if(user.logged_in) { printf("Please logout first\n");} 
-                else { break; }                                           //acaba o programa
-
-            // PUBLISH 
-            } else if(strcmp(command, "publish") == 0) {
-                if (!user.logged_in) {
-                    printf("please login first\n");
+            if (FD_ISSET(fd_peer, &testfds)){
+                int fd_client = accept(fd_peer, NULL, NULL);
+                if (fd_client == -1) {
+                    perror("accept");
                     continue;
                 }
 
-                int n = sscanf(buffer, "%*s %s %s", filename, label);  //ignoramos a primeira palavra e lemos o filename e label
-                if (n != 2) {
-                    printf("Incorrect arguments\n");
-                    continue;
-                }
-                Fsize = open_file(filename); //tenta abrir o ficheiro e obter o tamanho
-                if (Fsize == -1) {
-                    printf ("File does not exist\n");
-                    continue;
-                }
+                //get()
 
-                if (!valid_publish(filename, Fsize, label)) {
-                    printf("Invalid file\n");
-                    continue;
-                }
-                convert_ds(command, &user, ds_command, filename, Fsize, label, peer_uid);                     // comunicação com o DS 
-                if (ds_communication(fd, ds_command, response, res)) {
-                    ds_reply(response, &user, peer_ip, &peer_tcpport);
-                } 
 
-            // REMOVE 
-            } else if (strcmp(command, "remove") == 0) {
-                if (!user.logged_in) {
-                    printf("Please login first\n");
-                    continue;
-                }
-                int n = sscanf(buffer, "%*s %s", filename);
-                if (n != 1) {
-                    printf("Incorrect arguments\n");
-                    continue;
-                }
-                if (!valid_filename(filename)) {
-                    printf("Incorrect arguments\n");
-                    continue;
-                }
-                convert_ds(command, &user, ds_command, filename, Fsize, label, peer_uid);                     // comunicação com o DS 
-                if (ds_communication(fd, ds_command, response, res)) {
-                    ds_reply(response, &user, peer_ip, &peer_tcpport);
-                }
-               
-            // LIST
-            } else if (strcmp(command, "list") == 0) {
-                convert_ds(command, &user, ds_command, filename, Fsize, label, peer_uid);                     // comunicação com o DS 
-                if (ds_communication(fd, ds_command, response, res)) {
-                    ds_reply(response, &user, peer_ip, &peer_tcpport);
-                }
-
-            // VERSIONS
-            } else if(strcmp(command, "versions") == 0) {
-
-                int n = sscanf(buffer, "%*s %s", filename); 
-                if (n != 1) {
-                    printf("Incorrect arguments\n");
-                    continue;
-                }
-                if (!valid_filename(filename)) {
-                    printf("Invalid file\n");
-                    continue;
-                }
-                convert_ds(command, &user, ds_command, filename, Fsize, label, peer_uid);                     // comunicação com o DS 
-                if (ds_tcp_communication(ds_command, response, res_tcp)) {
-                    ds_reply(response, &user, peer_ip, &peer_tcpport);
-                } 
-
-            }  else if(strcmp(command, "where") == 0) {
-                int n = sscanf(buffer, "%*s %s %s", filename, peer_uid); 
-                if (n != 2) {
-                    printf("Incorrect arguments\n");
-                    continue;
-                }
-                if (!valid_filename(filename) || !valid_uid(peer_uid)) {
-                    printf("Invalid arguments\n");
-                    continue;
-                }
-                convert_ds(command, &user, ds_command, filename, Fsize, label, peer_uid);                     // comunicação com o DS 
-                if (ds_communication(fd, ds_command, response, res)) {
-                    ds_reply(response, &user, peer_ip, &peer_tcpport);
-                } 
-            // comando nao reconhecido
-            } else {
-                printf("Unknown command\n");
-            } 
+                close(fd_client); // apenas aceitamos a conexão e fechamos, não há comunicação com o peer
+            }
         }
     
     freeaddrinfo(res);
