@@ -127,7 +127,6 @@ void clear_user(User *user) {
     memset(user->password, 0, sizeof(user->password));
 }
 
-
 // OPEN_fILE: vê se é possivel abrir o ficheiro, se sim devolve o tamanho em bytes
 int open_file(char *filename) {
     FILE *file = fopen(filename, "rb");             //rb = read binary
