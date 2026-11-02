@@ -32,7 +32,7 @@ typedef struct {
 
 // validação do UID
 int valid_uid(const char *uid) {
-    if (strlen(uid) != UID_SIZE) { //user ID tem de ter exatamente 6 dígitos
+    if (strlen(uid) != UID_SIZE) {              // user ID tem de ter exatamente 6 dígitos
         return 0;
     }
     for (int i = 0; i < UID_SIZE; i++) {                                    
@@ -45,14 +45,14 @@ int valid_uid(const char *uid) {
 
 // validação da password
 int valid_password (const char *password) {
-    if (strlen(password) != PASSWORD_SIZE) { //password tem de ter exatamente 8 caractéres alfanuméricos
+    if (strlen(password) != PASSWORD_SIZE) {    // password tem de ter exatamente 8 caractéres alfanuméricos
         return 0;
     }
     for (int i = 0; i < PASSWORD_SIZE; i++) {
         char c = password[i];
         if (!((c >= '0' && c <= '9') ||
               (c >= 'A' && c <= 'Z') ||
-              (c >= 'a' && c <= 'z'))) { //veriricamos se o caracter nao pertence a nuehum detes grupos: numeros, letras maiusculas e minusculas
+              (c >= 'a' && c <= 'z'))) {        //verificamos se o caracter nao pertence a nuehum destes grupos: numeros, letras maiusculas e minusculas
             return 0;
         }
     }
@@ -70,13 +70,13 @@ int valid_filename(char *filename) {
          return 0;
     } 
     int i = 0;
-    while (filename[i] != '.' && filename[i] != '\0') {
-        if (!isalnum(filename[i]) && filename[i] != '_' && filename[i] != '-') { // antes do ponto so pode haver letras/numeros - _
+    while (filename[i] != '.' && filename[i] != '\0') { // antes do ponto so pode haver letras/numeros - _
+        if (!isalnum(filename[i]) && filename[i] != '_' && filename[i] != '-') { 
             return 0; 
         }
         i++;
     }
-    if (filename[i] != '.' || i == 0) { // garante que tem extensão(ponto) e existe um caracter antes o ponto
+    if (filename[i] != '.' || i == 0) {                 // garante que tem extensão(ponto) e existe um caracter antes o ponto
         return 0;
     }
     i++;  // saltar o ponto
