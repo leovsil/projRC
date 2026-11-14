@@ -127,7 +127,7 @@ void clear_user(User *user) {                       // ponteiro para a estrutura
     memset(user->password, 0, sizeof(user->password));
 }
 
-// OPEN_FILE
+// OPEN_fILE: vê se é possivel abrir o ficheiro, se sim devolve o tamanho em bytes
 int open_file(char *filename) {
     FILE *file = fopen(filename, "rb");             // rb = read binary
     if (file == NULL) {                             // caso nao consiga abrir o ficheiro
@@ -154,7 +154,7 @@ void set_timeout(int fd, int secs) {
     setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
 }
 
-// imprime uma lista dos ficheiros disponíveis
+// PRINT_LIST: imprime uma lista dos ficheiros disponíveis (50 máx)
 void print_list(char *response) {
     char copy[MAXSIZE];
     strcpy(copy, response); //copy = "RLS OK foto.jpg trabalho.pdf teste.txt\n" porque o strtok altera a string original
@@ -172,7 +172,7 @@ void print_list(char *response) {
     
 }
 
-// imprime que versoes ha disponiveis do ficheiro segundo as informações do DS
+// PRINT_VERSIONS: imprime que versões há disponíveis do ficheiro segundo as informações do DS
 void print_versions(char *response){
     char *copy = malloc(strlen(response) + 1);      // aloca a memoria para as versões para não desperdiçar memória, +1 para o \0
     if (copy == NULL) {
@@ -221,7 +221,7 @@ void print_versions(char *response){
     free(copy);
 }
 
-// escolhe o peer com a primeira versão disponível do ficheiro
+// SELECT_PEER: escolhe o peer com a primeira versão disponível do ficheiro
 int select_peer(char *response, char *peer_uid, User *user) {
     char *copy = malloc(strlen(response) + 1);
     if (copy == NULL) {
@@ -272,7 +272,7 @@ int select_peer(char *response, char *peer_uid, User *user) {
     return 0;
 }
 
-// RECEIVE FILE
+// RECEIVE FILE: recebe o conteúdo do ficheiro do peer e cria o localmente
 // fd_get - socket tcp do peer; filename - ficheiro q guardo localmente
 int receive_file(int fd_get, char* filename) {
     char response[MAXSIZE]; // resposta do peer
@@ -386,7 +386,7 @@ int send_file(int fd_client, char *message, int size) {
 
 
 
-// PEER_REQUEST
+// PEER_REQUEST: responde ao peer com a resposta ao seu pedido de ficheiro
 void peer_request(int fd_client){
     char response[MAXSIZE];
     char command[MAXSIZE];
@@ -593,7 +593,7 @@ int ds_tcp_communication( char *message, char *response, struct addrinfo *res_tc
     return 1;
 }
 
-// recebe a resposta do DS e imprime a mensagem apropriada para o utilizador
+// DS_REPLY: recebe a resposta do DS e imprime a mensagem apropriada para o utilizador
 void ds_reply(char *response, User *user, char *peer_ip, int *peer_tcpport) {
     char command[MAXSIZE]; // RLI, RLO, RUR, RPB, RRM, RLS, RVR
     char status [MAXSIZE]; // OK, REG, NOK, NLG, UNR, WRP
@@ -757,6 +757,7 @@ int connect_peer(char *peer_ip, int peer_tcpport) {
     return fd_get;
 }
 
+// SEND_GET: cria pedido de ficheiro
 int send_get(int fd_get, char *filename){
     char message[32]; //maximo filename size é 24 + get + espaços+ \n +\0    ou FILENAMESIZE +6
 
@@ -778,6 +779,7 @@ int send_get(int fd_get, char *filename){
     return 1;
 }
 
+// MAIN 
 int main(int argc, char *argv[]) {
     User user;
     clear_user(&user);
