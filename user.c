@@ -140,50 +140,8 @@ int open_file(char *filename) {
     return bytes;
 }
 
-void convert_ds(char *command, User *user, char * ds_command, char *filename, int Fsize, char *label,char *peer_uid) {
-    // ds_command é o buffer onde vai ficar a mensagem para o server
-    if(strcmp(command, "login") == 0) {
-        sprintf(ds_command, "LIN %s %s %d\n", user->uid, user->password, user->peerport);
-    } else if (strcmp(command, "logout") == 0) {
-        sprintf(ds_command, "LOU %s %s\n", user->uid, user->password);
-    } else if (strcmp(command, "unregister") == 0) {
-        sprintf(ds_command, "UNR %s %s\n", user->uid, user->password);
-        //phase 2
-    } else if (strcmp(command, "publish") == 0) {
-        sprintf(ds_command, "PUB %s %s %s %d %s\n", user->uid, user->password, filename, Fsize, label); 
-    } else if (strcmp(command, "remove") == 0) {
-        sprintf(ds_command, "REM %s %s %s\n", user->uid, user->password, filename);
-    } else if (strcmp(command, "list") == 0) {
-        sprintf(ds_command, "LST\n");
-    } else if (strcmp(command, "versions") == 0) {
-        sprintf(ds_command, "VRS %s\n", filename);
-    } else if (strcmp(command, "where") == 0) {
-        sprintf(ds_command, "WHR %s %s\n", filename, peer_uid);
-    } 
-}
 
-//envia mensagem ao DS atraves de UDP, espera pela resposta e mete a resposta no response
-int ds_communication(int fd, char *message, char *response, struct addrinfo *res) {
-    ssize_t n; //numero de bytes lidos/enviados
-    n = sendto(fd, message, strlen(message), 0, res->ai_addr, res->ai_addrlen);
-    if (n == -1) {
-        perror("sendto");
-        return 0;
-    }
-    n = recvfrom(fd, response, MAXSIZE - 1, 0, NULL, NULL); //-1 para deixar espaço para o \0 no final da string caso a resposta seja exatamente MAXSIZE
-    if (n == -1) {
-        if (errno == EAGAIN || errno == EWOULDBLOCK) {
-            printf("Timeout\n");
-        } else {
-            perror("recvfrom");
-        }
-        exit(1);
-    }
-    
-    response[n] = '\0'; //adiciona o terminador de string no final da resposta
-    return 1;
 
-}
 
 // imprime uma lista dos ficheiros disponíveis
 void print_list(char *response) {
@@ -255,7 +213,7 @@ void print_versions(char *response){
 // DS, UDP E TCP
 
 // CONVERT_DS: converte a mensagem de input no formato pretendido pelo DS
-void convert_ds(char *command, User *user, char * ds_command, char *filename, int Fsize, char *label) {
+void convert_ds(char *command, User *user, char * ds_command, char *filename, int Fsize, char *label,char *peer_uid) {
     // ds_command é o buffer onde vai ficar a mensagem para o server
     if(strcmp(command, "login") == 0) {
         sprintf(ds_command, "LIN %s %s %d\n", user->uid, user->password, user->peerport);
@@ -272,9 +230,10 @@ void convert_ds(char *command, User *user, char * ds_command, char *filename, in
         sprintf(ds_command, "LST\n");
     } else if (strcmp(command, "versions") == 0) {
         sprintf(ds_command, "VRS %s\n", filename);
+    } else if (strcmp(command, "where") == 0) {
+        sprintf(ds_command, "WHR %s %s\n", filename, peer_uid);
     } 
 }
-
 // COMMUNICATIONS
 
 // DS_COMMUNICATION: comunicação UDP para o DS: envia message e recebe a resposta em response
@@ -458,17 +417,24 @@ void ds_reply(char *response, User *user, char *peer_ip, int *peer_tcpport) {
         } else if (strcmp(status, "NOK") == 0) {
             printf("No versions available\n");
         }
-    } else if (strcmp(command, "RWH") == 0) {                      // LOGIN
+    } else if (strcmp(command, "RWH") == 0) { 
+        peer_ip[0] = '\0';
+        *peer_tcpport = 0;                 
         if(strcmp(status, "OK") == 0) {                     
-            if(sscanf(response, "RWH OK %s %d", peer_ip, peer_tcpport) == 2) {
+            if(sscanf(response, "RWH OK %15s %d", peer_ip, peer_tcpport) == 2 
+        && valid_peerport(*peer_tcpport)) {
                 printf("Peer available found IP: %s, TCP port: %d\n", peer_ip, *peer_tcpport);
             } else {
+                peer_ip[0] = '\0';
+                *peer_tcpport = 0;
                 printf("Invalid DS response\n");
             }
 
         } else if (strcmp(status, "NOK") == 0) {
-            printf("No file found available\n");
-        } 
+            printf("Peer or publication no longer available\n");
+        } else {
+            printf("Invalid DS response\n");
+        }
     } else {
         printf("Unknown command from DS: %s\n", command);
     }
@@ -502,7 +468,6 @@ int main(int argc, char *argv[]) {
     
     char peer_ip[16];
     int peer_tcpport;
-    char peer_uid_aux[MAXSIZE];
     char peer_uid[UID_SIZE + 1];
 
     if(argc != 3 && argc != 5 && argc != 7) {
@@ -768,22 +733,6 @@ int main(int argc, char *argv[]) {
                         ds_reply(response, &user, peer_ip, &peer_tcpport);
                     } 
 
-                // WHERE
-                }  else if(strcmp(command, "where") == 0) {
-                    int n = sscanf(buffer, "%*s %s %s", filename, peer_uid_aux); 
-                    if (n != 2) {
-                        printf("Incorrect arguments\n");
-                        continue;
-                    }
-                    if (!valid_filename(filename) || !valid_uid(peer_uid_aux)) {
-                        printf("Invalid arguments\n");
-                        continue;
-                    }
-                    strcpy(peer_uid, peer_uid_aux);
-                    convert_ds(command, &user, ds_command, filename, Fsize, label, peer_uid);                     // comunicação com o DS 
-                    if (ds_communication(fd, ds_command, response, res)) {
-                        ds_reply(response, &user, peer_ip, &peer_tcpport);
-                    } 
                 // comando nao reconhecido
                 } else {
                     printf("Unknown command\n");
@@ -812,7 +761,7 @@ int main(int argc, char *argv[]) {
                         continue;
                     }
                     
-                
+                    //convert_ds("where", &user, ds_command,filename, Fsize, label, peer_uid);
 
                 }
                 close(fd_client); // apenas aceitamos a conexão e fechamos, não há comunicação com o peer
