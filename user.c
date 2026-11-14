@@ -28,7 +28,9 @@ typedef struct {
     int peerport;
 } User;
 
+// VALIDAÇÕES
 
+// validação do UID
 int valid_uid(const char *uid) {
     if (strlen(uid) != UID_SIZE) { //user ID tem de ter exatamente 6 dígitos
         return 0;
@@ -41,6 +43,7 @@ int valid_uid(const char *uid) {
     return 1;
 }
 
+// validação da password
 int valid_password (const char *password) {
     if (strlen(password) != PASSWORD_SIZE) { //password tem de ter exatamente 8 caractéres alfanuméricos
         return 0;
@@ -56,11 +59,13 @@ int valid_password (const char *password) {
     return 1;
 }
 
+// validação do peerport
 int valid_peerport(int peerport) {
     return (peerport > 0 && peerport <= PEERPORT);
 }
 
 
+// validação do filename
 int valid_filename(char *filename) {
     if (strlen(filename) > 24) {                        //comprimento máximo de 24 caracteres
          return 0;
@@ -525,6 +530,7 @@ int ds_communication(int fd, char *message, char *response, struct addrinfo *res
             perror("recvfrom");
         }
         exit(1);
+        //return 0; erro a ver
     }
     
     response[n] = '\0';                                       // adiciona o terminador de string no final da resposta
