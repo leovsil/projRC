@@ -9,6 +9,7 @@
 #include <netdb.h>
 #include <sys/time.h>
 #include <errno.h>
+#include <signal.h>
 #define MAXSIZE 2048        // a definir
 #define UID_SIZE 6
 #define PASSWORD_SIZE 8
@@ -121,6 +122,7 @@ void clear_user(User *user) {                       // ponteiro para a estrutura
     memset(user->password, 0, sizeof(user->password));
 }
 
+// OPEN_FILE
 int open_file(char *filename) {
     FILE *file = fopen(filename, "rb");             // rb = read binary
     if (file == NULL) {                             // caso nao consiga abrir o ficheiro
@@ -140,8 +142,12 @@ int open_file(char *filename) {
     return bytes;
 }
 
-
-
+// TIMEOUT
+void set_timeout(int fd, int secs) {
+    struct timeval tv = { secs, 0 };
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+}
 
 // imprime uma lista dos ficheiros disponíveis
 void print_list(char *response) {
@@ -211,7 +217,7 @@ void print_versions(char *response){
 }
 
 // escolhe o peer com a primeira versão disponível do ficheiro
-int select_peer(char *response, char *peer_uid) {
+int select_peer(char *response, char *peer_uid, User *user) {
     char *copy = malloc(strlen(response) + 1);
     if (copy == NULL) {
         perror("malloc");
@@ -249,7 +255,8 @@ int select_peer(char *response, char *peer_uid) {
             return 0;
         }
 
-        if (strcmp(availability, "AVL") == 0 && valid_uid(uid)) {   // escolher a primeira versao com o user disponivel
+        if (strcmp(availability, "AVL") == 0 && valid_uid(uid) 
+            && strcmp(uid, user->uid) != 0) {   // escolher a primeira versao com o user disponivel
             strcpy(peer_uid, uid);
             free(copy);
             return 1;
@@ -258,6 +265,218 @@ int select_peer(char *response, char *peer_uid) {
 
     free(copy);
     return 0;
+}
+
+// RECEIVE FILE
+// fd_get - socket tcp do peer; filename - ficheiro q guardo localmente
+int receive_file(int fd_get, char* filename) {
+    char response[MAXSIZE]; // resposta do peer
+    char command[MAXSIZE]; // RGT
+    char status [MAXSIZE]; // OK, NOK
+    int total = 0, spaces = 0;              // total: bytes da response, Fsize tamanho ficheiro da response
+    int Fsize;
+    ssize_t bytes;
+
+    // lê "RGT OK tamanho" / "RGT NOK\n"
+    // leitura do socket garantindo que recebemos tudo
+    while (total < sizeof(response) - 1) {
+        bytes = read(fd_get, response + total, 1);
+        if (bytes <= 0) {
+            printf("Response error\n");
+            return 0;
+        }
+
+       char c = response[total];
+       total++;                                 // total de caracteres recebidos até agora
+       if(c == ' ') spaces++;
+       if(spaces == 3 || c == '\n') break;      // '\n' para casos de NOK (sem filename)
+    }
+    response[total] = '\0';                     // fica com o lido do socket
+    int n = sscanf(response, "%3s %3s %d", command, status, &Fsize);
+
+    if (n < 2 || strcmp(command, "RGT") != 0) {
+        printf("Invalid peer response\n");  
+        return 0;
+    }
+    if(strcmp(status, "NOK") == 0) {
+        printf("File unavailable\n");  
+        return 0;
+    }
+    if (strcmp(status, "OK") != 0 || n != 3 ||
+        spaces != 3 || Fsize < FSIZE_MIN || Fsize > FSIZE_MAX) {
+        printf("Invalid peer response\n");
+        return 0;
+    }
+    
+    FILE *file = fopen(filename, "wb");            
+    // abrimos o ficheiro localemente (se não existir é criado, se existir o conteudo anterior é apagado)
+
+    if (file == NULL) {
+        perror("fopen");
+        return 0;
+    }
+    char content[MAXSIZE];
+    total = 0;                  // nº bytes do ficheiro guardados
+
+    while (total < Fsize) {    
+        int to_read = Fsize - total;
+
+        if (to_read > MAXSIZE) {
+            to_read = MAXSIZE;
+        }
+
+        n = read(fd_get, content, to_read);         // ler do socket o conteúdo do ficheiro
+
+        // erro de leitura/ nao escrevemos todos os bytes recebidos
+        if (n <= 0 || fwrite(content, 1, n, file) != n) {   // fwrite escrever n elementos de 1 byte vindos de content no file
+            printf("Error receiving or writing file\n");
+            fclose(file);
+            remove(filename);
+            return 0;
+        }
+
+        total += n;
+    }
+
+    // Ler a mudança de linha que termina a resposta
+    char end_char;
+    n = read(fd_get, &end_char, 1);
+
+    if (n != 1 || end_char != '\n') {               // confirma que é 1 byte de \n e nao é escrito
+        printf("Invalid end of response\n");
+        fclose(file);
+        remove(filename);
+        return 0;
+    }
+
+    if (fclose(file) != 0) {
+        printf("Error saving file\n");
+        remove(filename);
+        return 0;
+    }
+
+    printf("File saved in current directory: %s (%d bytes)\n",
+           filename, total);
+    return 1;
+
+}
+
+
+// SEND FILE
+int send_file(int fd_client, char *message, int size) {
+    int total = 0;
+    ssize_t n;
+
+    while (total < size) {
+        n = send(fd_client, message + total, size - total, MSG_NOSIGNAL);                  // envia os bytes através do socket TCP para o peer
+        
+        if (n <= 0) {
+            perror("write");
+            return 0;
+        }
+        total += n;
+    }
+    return 1;
+}
+
+
+
+// PEER_REQUEST
+void peer_request(int fd_client){
+    char response[MAXSIZE];
+    char command[MAXSIZE];
+    char filename[MAXSIZE];
+    int total = 0;
+    ssize_t bytes;
+
+    while (total < MAXSIZE - 1) {
+        bytes = read(fd_client, response + total, 1);
+
+        if (bytes <= 0) {
+            printf("Error receiving peer request\n");
+            return;
+        }
+
+        total++;
+        if (response[total - 1] == '\n') {
+            break;
+        }
+    }
+
+    response[total] = '\0';
+
+    // Interpretar GET filename e rejeitar argumentos extra
+    int n = sscanf(response, "%s %s", command, filename);
+
+    if (response[total - 1] != '\n' || n != 2 ||
+        strcmp(command, "GET") != 0 || !valid_filename(filename)) {
+
+        char message[] = "RGT ERR\n";
+        send_file(fd_client, message, strlen(message));
+        return;
+    }
+
+    // Reutilizar a tua função para obter o tamanho
+    int Fsize = open_file(filename);
+
+    if (Fsize < FSIZE_MIN || Fsize > FSIZE_MAX) {
+        char message[] = "RGT NOK\n";
+        send_file(fd_client, message, strlen(message));
+        return;
+    }
+
+    FILE *file = fopen(filename, "rb");
+
+    if (file == NULL) {
+        char message[] = "RGT NOK\n";
+        send_file(fd_client, message, strlen(message));
+        return;
+    }
+
+    // Enviar o cabeçalho antes do conteúdo
+    char message[MAXSIZE];
+    sprintf(message, "RGT OK %d ", Fsize);
+
+    if (!send_file(fd_client, message, strlen(message))) {
+        fclose(file);
+        return;
+    }
+
+    // Ler o ficheiro em blocos e enviá-los
+    char content[MAXSIZE];
+    total = 0;
+
+    while (total < Fsize) {
+        int to_read = Fsize - total;
+
+        if (to_read > MAXSIZE) {
+            to_read = MAXSIZE;
+        }
+
+        int bytes = fread(content, 1, to_read, file);
+
+        if (bytes == 0) {
+            printf("Error reading file\n");
+            fclose(file);
+            return;
+        }
+
+        if (!send_file(fd_client, content, bytes)) {
+            fclose(file);
+            return;
+        }
+
+        total += bytes;
+    }
+
+    fclose(file);
+
+    // Terminar a resposta
+    if (!send_file(fd_client, "\n", 1)) {
+        return;
+    }
+
+    printf("File sent: %s (%d bytes)\n", filename, total);
 }
 
 
@@ -323,6 +542,9 @@ int ds_tcp_communication( char *message, char *response, struct addrinfo *res_tc
         perror("socket");
         return 0;
     }
+
+    set_timeout(fd_tcp, 5);
+
     if (connect(fd_tcp, res_tcp->ai_addr, res_tcp->ai_addrlen) == -1) { //inicia a ligação TCP com o DS
         perror("connect");
         close(fd_tcp);
@@ -516,6 +738,8 @@ int connect_peer(char *peer_ip, int peer_tcpport) {
         return -1;
     }
 
+    set_timeout(fd_get, 5);
+
     if (connect(fd_get, res_get->ai_addr, res_get->ai_addrlen) == -1) {             // estabelecer conexção TCP com o peer
         perror("connect");
         freeaddrinfo(res_get);
@@ -577,6 +801,8 @@ int main(int argc, char *argv[]) {
     char peer_ip[16];
     int peer_tcpport;
     char peer_uid[UID_SIZE + 1];
+
+    signal(SIGPIPE, SIG_IGN); // casos como write num socket que fecha a meio, write falha e devolve - 1
 
     if(argc != 3 && argc != 5 && argc != 7) {
         printf("Usage: %s -m peerport [-n DSIP] [-p DSport]\n", argv[0]);
@@ -715,7 +941,7 @@ int main(int argc, char *argv[]) {
                 if(fgets(buffer, MAXSIZE, stdin) == NULL) { //lê a linha escrita no terminal
                     break;
                 }
-                sscanf(buffer, "%s", command); //retiramos a primeira palavra(comando ex.login)
+                if(sscanf(buffer, "%s", command)!= 1) continue; //retiramos a primeira palavra(comando ex.login)
                 
                 // LOGIN
                 if (strcmp(command, "login") == 0) {
@@ -863,7 +1089,7 @@ int main(int argc, char *argv[]) {
                         continue;
                     }
 
-                    if (!select_peer(response, peer_uid)) {                                         // escolher o peer com a primeira versão disponível do ficheiro
+                    if (!select_peer(response, peer_uid, &user)) {                                         // escolher o peer com a primeira versão disponível do ficheiro
                         printf("No available peer found\n");
                         continue;
                     }
@@ -883,6 +1109,11 @@ int main(int argc, char *argv[]) {
                         continue;
                     }
 
+
+                    // TESTE LOCAL
+                    #ifdef LOCALTEST
+                    strcpy(peer_ip, "127.0.0.1");   // só para testes na mesma máquina
+                    #endif  
                     int fd_get = connect_peer(peer_ip, peer_tcpport);                               // estabelecer ligação TCP com o peer
                     if (fd_get == -1) {
                         printf("error connecting to peer\n");
@@ -896,6 +1127,10 @@ int main(int argc, char *argv[]) {
                     }
 
                     //falta receber a resposta do peer e guardar o ficheiro ig
+                    if (!receive_file(fd_get, filename)) {
+                        close(fd_get);
+                        continue;
+                    }   
                     close(fd_get); 
 
                 // comando nao reconhecido
@@ -909,10 +1144,12 @@ int main(int argc, char *argv[]) {
                     perror("accept");
                     continue;
                 }
+                set_timeout(fd_client, 5);
                 //receber a mensagem GET filename do outro peer
                 //verificar se o ficheiro existe e está disponível
                 //enviar RGT OK + tamanho + conteúdo do ficheiro ou RGT NOK se não estiver disponível
                 
+                peer_request(fd_client);
                 close(fd_client); // apenas aceitamos a conexão e fechamos, não há comunicação com o peer
             }
         
