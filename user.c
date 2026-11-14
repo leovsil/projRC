@@ -210,6 +210,57 @@ void print_versions(char *response){
     free(copy);
 }
 
+// escolhe o peer com a primeira versão disponível do ficheiro
+int select_peer(char *response, char *peer_uid) {
+    char *copy = malloc(strlen(response) + 1);
+    if (copy == NULL) {
+        perror("malloc");
+        return 0;
+    }
+
+    strcpy(copy, response);
+    char *token = strtok(copy, " \n");
+    if (token == NULL || strcmp(token, "RVR") != 0) {           // RVR
+        free(copy);
+        return 0;
+    }
+
+    token = strtok(NULL, " \n");                                // OK
+    if (token == NULL || strcmp(token, "OK") != 0) {
+        free(copy);
+        return 0;
+    }
+
+    char *uid;
+    char *fsize;
+    char *label;
+    char *publication_time;
+    char *availability;
+
+    while ((uid = strtok(NULL, " \n")) != NULL) {               // percorrer todas as versões disponiveis do ficheiro
+
+        fsize = strtok(NULL, " \n");
+        label = strtok(NULL, " \n");
+        publication_time = strtok(NULL, " \n");
+        availability = strtok(NULL, " \n");
+
+        if (fsize == NULL || label == NULL || publication_time == NULL || availability == NULL) {  // verificar se todos os campos da resposta estão completos
+            free(copy);
+            return 0;
+        }
+
+        if (strcmp(availability, "AVL") == 0 && valid_uid(uid)) {   // escolher a primeira versao com o user disponivel
+            strcpy(peer_uid, uid);
+            free(copy);
+            return 1;
+        }
+    }
+
+    free(copy);
+    return 0;
+}
+
+
 // DS, UDP E TCP
 
 // CONVERT_DS: converte a mensagem de input no formato pretendido pelo DS
@@ -418,8 +469,8 @@ void ds_reply(char *response, User *user, char *peer_ip, int *peer_tcpport) {
             printf("No versions available\n");
         }
     } else if (strcmp(command, "RWH") == 0) { 
-        peer_ip[0] = '\0';
-        *peer_tcpport = 0;                 
+        //peer_ip[0] = '\0';
+        //*peer_tcpport = 0;                 
         if(strcmp(status, "OK") == 0) {                     
             if(sscanf(response, "RWH OK %15s %d", peer_ip, peer_tcpport) == 2 
         && valid_peerport(*peer_tcpport)) {
@@ -438,6 +489,63 @@ void ds_reply(char *response, User *user, char *peer_ip, int *peer_tcpport) {
     } else {
         printf("Unknown command from DS: %s\n", command);
     }
+}
+
+// CONNECT_PEER: cria socket TCP e estabelece ligação com o peer e devolve o fd do peer que queremos comunicar
+int connect_peer(char *peer_ip, int peer_tcpport) {
+    int fd_get;
+    struct addrinfo hints_peer, *res_get;
+    char peerport_str[6];
+
+    fd_get = socket(AF_INET, SOCK_STREAM, 0);
+    if (fd_get == -1) {
+        perror("socket");
+        //é preciso dar freeaddrinfo(res_get) aqui? 
+        return -1;
+    }
+
+    sprintf(peerport_str, "%d", peer_tcpport); //converter int para string para passar para getaddrinfo 
+    memset(&hints_peer, 0, sizeof(hints_peer));
+    hints_peer.ai_family = AF_INET;                                                 // endereços IPv4
+    hints_peer.ai_socktype = SOCK_STREAM;                                           // TCP 
+
+    int errcode = getaddrinfo(peer_ip, peerport_str, &hints_peer, &res_get);
+    if (errcode != 0) {
+        fprintf(stderr, "getaddrinfo failed\n");
+        close(fd_get);
+        return -1;
+    }
+
+    if (connect(fd_get, res_get->ai_addr, res_get->ai_addrlen) == -1) {             // estabelecer conexção TCP com o peer
+        perror("connect");
+        freeaddrinfo(res_get);
+        close(fd_get);
+        return -1;
+    }
+
+    freeaddrinfo(res_get);
+    return fd_get;
+}
+
+int send_get(int fd_get, char *filename){
+    char message[32]; //maximo filename size é 24 + get + espaços+ \n +\0    ou FILENAMESIZE +6
+
+    int size= snprintf(message, sizeof(message), "GET %s\n", filename);           // constroi a mensagem  GET foto.jpg\n
+    if (size < 0 || size >= sizeof(message)) {                                    // verifica que cabe no buffer
+        printf("invalid GET message\n");
+        return 0;
+    }
+
+    int total = 0;
+    while (total < size) {
+        ssize_t n = write(fd_get, message + total, size - total);                  // envia os bytes através do socket TCP para o peer
+        if (n <= 0) {
+            perror("write");
+            return 0;
+        }
+        total += n;
+    }
+    return 1;
 }
 
 int main(int argc, char *argv[]) {
@@ -733,20 +841,8 @@ int main(int argc, char *argv[]) {
                         ds_reply(response, &user, peer_ip, &peer_tcpport);
                     } 
 
-                // comando nao reconhecido
-                } else {
-                    printf("Unknown command\n");
-                } 
-            }
-            if (FD_ISSET(fd_peer, &testfds)){
-                int fd_client = accept(fd_peer, NULL, NULL);
-                if (fd_client == -1) {
-                    perror("accept");
-                    continue;
-                }
-
-                //get()
-                if(strcmp(command, "get") == 0) {
+                // GET
+                } else if(strcmp(command, "get") == 0) {
                     if (!user.logged_in) { 
                         printf("Please login first\n");
                         continue;
@@ -761,9 +857,62 @@ int main(int argc, char *argv[]) {
                         continue;
                     }
                     
-                    //convert_ds("where", &user, ds_command,filename, Fsize, label, peer_uid);
+                    convert_ds("versions", &user, ds_command, filename, Fsize, label, peer_uid);     // pedir versions ao DS
+                    if (!ds_tcp_communication(ds_command, response, res_tcp)) {
+                        printf("error communicating to ds\n");
+                        continue;
+                    }
 
+                    if (!select_peer(response, peer_uid)) {                                         // escolher o peer com a primeira versão disponível do ficheiro
+                        printf("No available peer found\n");
+                        continue;
+                    }
+                    
+                    convert_ds("where", &user, ds_command, filename, Fsize, label, peer_uid);       // construir a mensagem do where para o DS
+                    if (!ds_communication(fd, ds_command, response, res)) {                         // enviar WHR ao DS por udp
+                        printf("error communicating to ds\n");
+                        continue;
+                    }
+
+                    //inicializar aqui em vez de ser no ds reply caso dê erro e a funcao nao entre ai, e depois o peer ta com valores antigos pq nao entrou no ds reply
+                    peer_ip[0] = '\0'; 
+                    peer_tcpport = 0;
+
+                    ds_reply(response, &user, peer_ip, &peer_tcpport);                              // interpretar a resposta do DS e obter o IP e porta TCP do peer
+                    if (peer_ip[0] == '\0' || peer_tcpport == 0) {
+                        continue;
+                    }
+
+                    int fd_get = connect_peer(peer_ip, peer_tcpport);                               // estabelecer ligação TCP com o peer
+                    if (fd_get == -1) {
+                        printf("error connecting to peer\n");
+                        continue;
+                    }
+
+                    if (!send_get(fd_get, filename)) {                                              // enviar o pedido GET para o peer
+                        printf("invalid GET request\n");
+                        close(fd_get);
+                        continue;
+                    }
+
+                    //falta receber a resposta do peer e guardar o ficheiro ig
+                    close(fd_get); 
+
+                // comando nao reconhecido
+                } else {
+                    printf("Unknown command\n");
+                } 
+            }
+            if (FD_ISSET(fd_peer, &testfds)){
+                int fd_client = accept(fd_peer, NULL, NULL);
+                if (fd_client == -1) {
+                    perror("accept");
+                    continue;
                 }
+                //receber a mensagem GET filename do outro peer
+                //verificar se o ficheiro existe e está disponível
+                //enviar RGT OK + tamanho + conteúdo do ficheiro ou RGT NOK se não estiver disponível
+                
                 close(fd_client); // apenas aceitamos a conexão e fechamos, não há comunicação com o peer
             }
         
