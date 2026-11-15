@@ -64,7 +64,6 @@ int valid_peerport(int peerport) {
     return (peerport > 0 && peerport <= PEERPORT);
 }
 
-
 // validação do filename
 int valid_filename(char *filename) {
     if (strlen(filename) > 24) {                        //comprimento máximo de 24 caracteres
@@ -221,6 +220,8 @@ void print_versions(char *response){
     free(copy);
 }
 
+// AUXILIARES ENTRE PEERS
+
 // SELECT_PEER: escolhe o peer com a primeira versão disponível do ficheiro
 int select_peer(char *response, char *peer_uid, User *user) {
     char *copy = malloc(strlen(response) + 1);
@@ -272,18 +273,16 @@ int select_peer(char *response, char *peer_uid, User *user) {
     return 0;
 }
 
-// RECEIVE FILE: recebe o conteúdo do ficheiro do peer e cria o localmente
-// fd_get - socket tcp do peer; filename - ficheiro q guardo localmente
+// RECEIVE_FILE: recebe o conteúdo do ficheiro do peer e cria o localmente
 int receive_file(int fd_get, char* filename) {
-    char response[MAXSIZE]; // resposta do peer
-    char command[MAXSIZE]; // RGT
-    char status [MAXSIZE]; // OK, NOK
+    char response[MAXSIZE];                 // resposta do peer (RGT NOK/RGT OK bytes conteudo\n)
+    char command[MAXSIZE];                  // RGT
+    char status [MAXSIZE];                  // OK, NOK
     int total = 0, spaces = 0;              // total: bytes da response, Fsize tamanho ficheiro da response
     int Fsize;
     ssize_t bytes;
 
-    // lê "RGT OK tamanho" / "RGT NOK\n"
-    // leitura do socket garantindo que recebemos tudo
+    // leitura da resposta do peer do socket tcp garantindo que recebemos tudo
     while (total < sizeof(response) - 1) {
         bytes = read(fd_get, response + total, 1);
         if (bytes <= 0) {
@@ -294,8 +293,9 @@ int receive_file(int fd_get, char* filename) {
        char c = response[total];
        total++;                                 // total de caracteres recebidos até agora
        if(c == ' ') spaces++;
-       if(spaces == 3 || c == '\n') break;      // '\n' para casos de NOK (sem filename)
+       if(spaces == 3 || c == '\n') break;      // spaces = 3 o próximo byte é conteúdo e '\n' para casos de NOK (sem filename)
     }
+    // para de ler do socket quando acaba a resposta ou o conteúdo começa no byte seguinte
     response[total] = '\0';                     // fica com o lido do socket
     int n = sscanf(response, "%3s %3s %d", command, status, &Fsize);
 
@@ -313,16 +313,18 @@ int receive_file(int fd_get, char* filename) {
         return 0;
     }
     
+    // abrimos o ficheiro localmente (se não existir é criado, se existir o conteúdo anterior é apagado)
     FILE *file = fopen(filename, "wb");            
-    // abrimos o ficheiro localemente (se não existir é criado, se existir o conteudo anterior é apagado)
 
     if (file == NULL) {
         perror("fopen");
         return 0;
     }
-    char content[MAXSIZE];
-    total = 0;                  // nº bytes do ficheiro guardados
 
+    char content[MAXSIZE];                      // buffer que armazena o conteúdo do ficheiro recebido
+    total = 0;                                  // nº bytes do ficheiro guardados
+
+    // lê do socket o resto da mensagem que contém o conteúdo do ficheiro
     while (total < Fsize) {    
         int to_read = Fsize - total;
 
@@ -330,10 +332,10 @@ int receive_file(int fd_get, char* filename) {
             to_read = MAXSIZE;
         }
 
-        n = read(fd_get, content, to_read);         // ler do socket o conteúdo do ficheiro
+        n = read(fd_get, content, to_read);   
 
-        // erro de leitura/ nao escrevemos todos os bytes recebidos
-        if (n <= 0 || fwrite(content, 1, n, file) != n) {   // fwrite escrever n elementos de 1 byte vindos de content no file
+        // erro de leitura/ não escrevemos todos os bytes recebidos
+        if (n <= 0 || fwrite(content, 1, n, file) != n) {   // fwrite escreve n elementos de 1 byte vindos de content no ficheiro
             printf("Error receiving or writing file\n");
             fclose(file);
             remove(filename);
@@ -343,32 +345,33 @@ int receive_file(int fd_get, char* filename) {
         total += n;
     }
 
-    // Ler a mudança de linha que termina a resposta
+    // lê o último byte que deve ser um '\n' (o total lido deve ser igual ao nºbytes dado na resposta)
     char end_char;
     n = read(fd_get, &end_char, 1);
 
-    if (n != 1 || end_char != '\n') {               // confirma que é 1 byte de \n e nao é escrito
+    if (n != 1 || end_char != '\n') {            // confirma que é 1 byte de \n e nao é escrito
         printf("Invalid end of response\n");
         fclose(file);
         remove(filename);
         return 0;
     }
 
+    // fecha o ficheiro
     if (fclose(file) != 0) {
         printf("Error saving file\n");
         remove(filename);
         return 0;
     }
 
+    // resultado no terminal
     printf("File saved in current directory: %s (%d bytes)\n",
            filename, total);
     return 1;
 
 }
 
-
-// SEND FILE
-int send_file(int fd_client, char *message, int size) {
+// SEND_RESPONSE: auxiliar a peer_request que envia o conteúdo em 'message' resposta a um pedido GET através do socket TCP
+int send_response(int fd_client, char *message, int size) {
     int total = 0;
     ssize_t n;
 
@@ -384,18 +387,17 @@ int send_file(int fd_client, char *message, int size) {
     return 1;
 }
 
-
-
-// PEER_REQUEST: responde ao peer com a resposta ao seu pedido de ficheiro
+// PEER_REQUEST: responde ao peer com a resposta ao seu pedido de ficheiro 'GET filename\n' 
 void peer_request(int fd_client){
-    char response[MAXSIZE];
+    char request[MAXSIZE];                 // guarda o pedido do peer 'GET filename\n'
     char command[MAXSIZE];
     char filename[MAXSIZE];
     int total = 0;
     ssize_t bytes;
 
+    // lê o pedido enviado no socket entre peers
     while (total < MAXSIZE - 1) {
-        bytes = read(fd_client, response + total, 1);
+        bytes = read(fd_client, request + total, 1);
 
         if (bytes <= 0) {
             printf("Error receiving peer request\n");
@@ -403,54 +405,57 @@ void peer_request(int fd_client){
         }
 
         total++;
-        if (response[total - 1] == '\n') {
+        if (request[total - 1] == '\n') {
             break;
         }
     }
 
-    response[total] = '\0';
+    request[total] = '\0';
 
-    // Interpretar GET filename e rejeitar argumentos extra
-    int n = sscanf(response, "%s %s", command, filename);
+    // Interpretar o pedido 'GET filename' 
+    int n = sscanf(request, "%s %s", command, filename);
 
-    if (response[total - 1] != '\n' || n != 2 ||
+    if (request[total - 1] != '\n' || n != 2 ||
         strcmp(command, "GET") != 0 || !valid_filename(filename)) {
 
         char message[] = "RGT ERR\n";
-        send_file(fd_client, message, strlen(message));
+        send_response(fd_client, message, strlen(message));     // envia ERR no caso de qualquer tipo de erro no pedido
         return;
     }
 
-    // Reutilizar a tua função para obter o tamanho
+    // obter o tamanho do ficheiro pedido
     int Fsize = open_file(filename);
 
+    // caso o ficheiro seja maior do que o permitido enviar 
     if (Fsize < FSIZE_MIN || Fsize > FSIZE_MAX) {
         char message[] = "RGT NOK\n";
-        send_file(fd_client, message, strlen(message));
+        send_response(fd_client, message, strlen(message));     // envia a responsta do NOK (sem conteúdo)
         return;
     }
 
     FILE *file = fopen(filename, "rb");
 
+    // se nao consegue abrir envia erro
     if (file == NULL) {
         char message[] = "RGT NOK\n";
-        send_file(fd_client, message, strlen(message));
+        send_response(fd_client, message, strlen(message));
         return;
     }
 
-    // Enviar o cabeçalho antes do conteúdo
-    char message[MAXSIZE];
+    char message[MAXSIZE];                          // mensagem de resposta correta
     sprintf(message, "RGT OK %d ", Fsize);
 
-    if (!send_file(fd_client, message, strlen(message))) {
+    // envia RGT OK FileSize
+    if (!send_response(fd_client, message, strlen(message))) {
         fclose(file);
         return;
     }
 
-    // Ler o ficheiro em blocos e enviá-los
+    // guarda o conteúdo lido do ficheiro
     char content[MAXSIZE];
     total = 0;
 
+    // leitura do ficheiro que pretendemos enviar
     while (total < Fsize) {
         int to_read = Fsize - total;
 
@@ -466,7 +471,8 @@ void peer_request(int fd_client){
             return;
         }
 
-        if (!send_file(fd_client, content, bytes)) {
+        // envia pelo socket o conteúdo do ficheiro
+        if (!send_response(fd_client, content, bytes)) {
             fclose(file);
             return;
         }
@@ -476,14 +482,13 @@ void peer_request(int fd_client){
 
     fclose(file);
 
-    // Terminar a resposta
-    if (!send_file(fd_client, "\n", 1)) {
+    // termina a resposta ao pedido enviando pelo socket o terminador
+    if (!send_response(fd_client, "\n", 1)) {
         return;
     }
 
     printf("File sent: %s (%d bytes)\n", filename, total);
 }
-
 
 // DS, UDP E TCP
 
@@ -509,6 +514,7 @@ void convert_ds(char *command, User *user, char * ds_command, char *filename, in
         sprintf(ds_command, "WHR %s %s\n", filename, peer_uid);
     } 
 }
+
 // COMMUNICATIONS
 
 // DS_COMMUNICATION: comunicação UDP para o DS: envia message e recebe a resposta em response
@@ -725,17 +731,18 @@ int connect_peer(char *peer_ip, int peer_tcpport) {
     struct addrinfo hints_peer, *res_get;
     char peerport_str[6];
 
-    fd_get = socket(AF_INET, SOCK_STREAM, 0);
+    fd_get = socket(AF_INET, SOCK_STREAM, 0);               // cria o socket TCO
     if (fd_get == -1) {
         perror("socket");
         //é preciso dar freeaddrinfo(res_get) aqui? 
         return -1;
     }
 
-    sprintf(peerport_str, "%d", peer_tcpport); //converter int para string para passar para getaddrinfo 
+    // prepara argumentos tcp
+    sprintf(peerport_str, "%d", peer_tcpport);              // converter int para string para passar para getaddrinfo 
     memset(&hints_peer, 0, sizeof(hints_peer));
-    hints_peer.ai_family = AF_INET;                                                 // endereços IPv4
-    hints_peer.ai_socktype = SOCK_STREAM;                                           // TCP 
+    hints_peer.ai_family = AF_INET;                         // endereços IPv4
+    hints_peer.ai_socktype = SOCK_STREAM;                   // TCP 
 
     int errcode = getaddrinfo(peer_ip, peerport_str, &hints_peer, &res_get);
     if (errcode != 0) {
@@ -744,9 +751,9 @@ int connect_peer(char *peer_ip, int peer_tcpport) {
         return -1;
     }
 
-    set_timeout(fd_get, 5);
+    set_timeout(fd_get, 5);                                 // timeout para o socket
 
-    if (connect(fd_get, res_get->ai_addr, res_get->ai_addrlen) == -1) {             // estabelecer conexção TCP com o peer
+    if (connect(fd_get, res_get->ai_addr, res_get->ai_addrlen) == -1) {    // estabelecer conexção TCP com o peer
         perror("connect");
         freeaddrinfo(res_get);
         close(fd_get);
@@ -754,22 +761,23 @@ int connect_peer(char *peer_ip, int peer_tcpport) {
     }
 
     freeaddrinfo(res_get);
-    return fd_get;
+    return fd_get;                                          // devolve o fd do sokcet se funcionar
 }
 
-// SEND_GET: cria pedido de ficheiro
+// SEND_GET: cria pedido de ficheiro através da ligação TCP
 int send_get(int fd_get, char *filename){
-    char message[32]; //maximo filename size é 24 + get + espaços+ \n +\0    ou FILENAMESIZE +6
+    char message[32];                                       // máximo filename size é 24 + get + espaços+ \n +\0    ou FILENAMESIZE +6
 
-    int size= snprintf(message, sizeof(message), "GET %s\n", filename);           // constroi a mensagem  GET foto.jpg\n
-    if (size < 0 || size >= sizeof(message)) {                                    // verifica que cabe no buffer
+    int size = snprintf(message, sizeof(message), "GET %s\n", filename);        // constrói a mensagem  GET foto.jpg\n
+    if (size < 0 || size >= sizeof(message)) {                                  // verifica que cabe no buffer
         printf("invalid GET message\n");
         return 0;
     }
 
+    // envio da mensagem por tcp ao peer
     int total = 0;
     while (total < size) {
-        ssize_t n = write(fd_get, message + total, size - total);                  // envia os bytes através do socket TCP para o peer
+        ssize_t n = write(fd_get, message + total, size - total);               // envia os bytes através do socket TCP para o peer
         if (n <= 0) {
             perror("write");
             return 0;
