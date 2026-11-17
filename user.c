@@ -787,6 +787,14 @@ int send_get(int fd_get, char *filename){
     return 1;
 }
 
+
+volatile sig_atomic_t ctrl_c = 0;
+
+void handle_sigint(int sig) {
+    ctrl_c = 1;
+}
+
+
 // MAIN 
 int main(int argc, char *argv[]) {
     User user;
@@ -819,6 +827,7 @@ int main(int argc, char *argv[]) {
     char peer_uid[UID_SIZE + 1];
 
     signal(SIGPIPE, SIG_IGN); // casos como write num socket que fecha a meio, write falha e devolve - 1
+    signal(SIGINT, handle_sigint);
 
     if(argc != 3 && argc != 5 && argc != 7) {
         printf("Usage: %s -m peerport [-n DSIP] [-p DSport]\n", argv[0]);
@@ -952,6 +961,18 @@ int main(int argc, char *argv[]) {
             int n = select(max_fd + 1, &testfds, NULL, NULL, NULL);
             if (n == -1) {
                 if (errno == EINTR) {
+                    if (ctrl_c) {
+                        ctrl_c = 0;
+
+                        if (user.logged_in) {
+                            convert_ds("logout", &user, ds_command,
+                                    filename, Fsize, label, peer_uid);
+
+                            if (ds_communication(fd, ds_command, response, res)) {
+                                ds_reply(response, &user, peer_ip, &peer_tcpport);
+                            }
+                        }
+                    }
                     continue;
                 }
                 perror("select");
