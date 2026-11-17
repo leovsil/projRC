@@ -973,7 +973,7 @@ int main(int argc, char *argv[]) {
                             }
                         }
                     }
-                    continue;
+                    break;
                 }
                 perror("select");
                 break;
